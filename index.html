@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Checklist">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+  <title>Smart Checklist</title>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============================================ HOME -->
+  <section class="view" id="view-home">
+    <header class="bar">
+      <div class="bar-title">
+        <h1 id="home-title">Smart Checklist</h1>
+        <p class="sub" id="home-sub">Select a phase</p>
+      </div>
+      <div class="bar-actions">
+        <button class="btn ghost" id="btn-edit">Edit</button>
+        <button class="btn ghost" id="btn-settings">Settings</button>
+      </div>
+    </header>
+    <div class="scroll">
+      <ul class="phase-list" id="phase-list"></ul>
+      <div class="home-foot">
+        <button class="btn ghost sm" id="btn-reset-progress">Reset all checkmarks</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ RUN -->
+  <section class="view" id="view-run" hidden>
+    <header class="bar">
+      <button class="btn ghost icon" id="btn-back-home" aria-label="Back">‹</button>
+      <div class="bar-title">
+        <h1 id="run-phase">Phase</h1>
+        <p class="sub"><span id="run-count">0 / 0</span></p>
+      </div>
+      <div class="bar-actions">
+        <button class="btn ghost" id="btn-restart-phase">Restart</button>
+      </div>
+    </header>
+
+    <div class="scroll" id="run-scroll">
+      <ul class="item-list" id="item-list"></ul>
+      <div class="phase-done" id="phase-done" hidden>
+        <div class="done-mark">✓</div>
+        <h2 id="done-title">Checklist complete</h2>
+        <button class="btn primary" id="btn-next-phase">Next phase</button>
+      </div>
+    </div>
+
+    <footer class="console" id="console">
+      <div class="console-status">
+        <span class="dot" id="mic-dot"></span>
+        <span id="status-text">Ready</span>
+      </div>
+      <div class="heard" id="heard"></div>
+      <div class="console-actions">
+        <button class="btn big" id="btn-repeat">Say again</button>
+        <button class="btn big primary" id="btn-start">Start</button>
+        <button class="btn big" id="btn-confirm">Check</button>
+      </div>
+    </footer>
+  </section>
+
+  <!-- ============================================ EDITOR -->
+  <section class="view" id="view-edit" hidden>
+    <header class="bar">
+      <button class="btn ghost icon" id="btn-edit-back" aria-label="Back">‹</button>
+      <div class="bar-title">
+        <h1>Edit checklist</h1>
+        <p class="sub" id="edit-sub">Changes save automatically</p>
+      </div>
+      <div class="bar-actions">
+        <button class="btn ghost" id="btn-export">Export</button>
+        <button class="btn ghost" id="btn-import">Import</button>
+      </div>
+    </header>
+    <div class="scroll">
+      <label class="field">
+        <span>Checklist name</span>
+        <input type="text" id="edit-name">
+      </label>
+      <div id="editor-phases"></div>
+      <button class="btn wide" id="btn-add-phase">+ Add phase</button>
+      <div class="danger-zone">
+        <button class="btn ghost danger" id="btn-restore-default">Restore default 737 checklist</button>
+      </div>
+    </div>
+    <input type="file" id="import-file" accept="application/json,.json" hidden>
+  </section>
+
+  <!-- ============================================ SETTINGS -->
+  <section class="view" id="view-settings" hidden>
+    <header class="bar">
+      <button class="btn ghost icon" id="btn-settings-back" aria-label="Back">‹</button>
+      <div class="bar-title">
+        <h1>Settings</h1>
+        <p class="sub" id="settings-sub"></p>
+      </div>
+    </header>
+    <div class="scroll">
+      <label class="field">
+        <span>Voice</span>
+        <select id="set-voice"></select>
+      </label>
+      <label class="field">
+        <span>Speed <b id="rate-val">1.0</b></span>
+        <input type="range" id="set-rate" min="0.5" max="1.6" step="0.05">
+      </label>
+      <label class="field">
+        <span>Pitch <b id="pitch-val">1.0</b></span>
+        <input type="range" id="set-pitch" min="0.5" max="1.5" step="0.05">
+      </label>
+      <button class="btn wide" id="btn-test-voice">Test voice</button>
+
+      <div class="sep"></div>
+
+      <label class="field row">
+        <span>
+          Voice confirmation
+          <small>Turn off to run the checklist by tapping only</small>
+        </span>
+        <input type="checkbox" id="set-voice-input">
+      </label>
+      <label class="field row">
+        <span>
+          Read the response back
+          <small>Calls out "Set" after you confirm — sounds like a real crew</small>
+        </span>
+        <input type="checkbox" id="set-speak-response">
+      </label>
+      <label class="field">
+        <span>Match strictness <b id="thr-val">50%</b>
+          <small>Higher = fewer false checks, more "say again"</small>
+        </span>
+        <input type="range" id="set-threshold" min="0.3" max="0.9" step="0.05">
+      </label>
+      <label class="field">
+        <span>Pause between items <b id="gap-val">400 ms</b></span>
+        <input type="range" id="set-gap" min="0" max="1500" step="50">
+      </label>
+
+      <div class="sep"></div>
+      <div class="diag" id="diag"></div>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/data.js"></script>
+<script src="js/store.js"></script>
+<script src="js/match.js"></script>
+<script src="js/speech.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,754 @@
+/**
+ * Smart Checklist — app shell and the run state machine.
+ */
+
+(() => {
+  const PROGRESS_KEY = 'sc.progress.v1';
+
+  let checklist = Store.loadChecklist();
+  let settings = Store.loadSettings();
+  let progress = loadProgress();
+
+  const run = {
+    phaseId: null,
+    index: 0,
+    active: false, // the loop is running (speaking/listening)
+    misses: 0, // consecutive unrecognized responses on this item
+  };
+
+  // ------------------------------------------------------------ helpers
+
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+  function loadProgress() {
+    try {
+      return JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveProgress() {
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+  }
+
+  function phaseById(id) {
+    return checklist.phases.find((p) => p.id === id);
+  }
+
+  function currentPhase() {
+    return phaseById(run.phaseId);
+  }
+
+  function currentItem() {
+    const p = currentPhase();
+    return p ? p.items[run.index] : null;
+  }
+
+  function phaseProgress(p) {
+    const done = p.items.filter((i) => progress[i.id]).length;
+    return { done, total: p.items.length };
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (el.hidden = true), 2200);
+  }
+
+  function showView(name) {
+    $$('.view').forEach((v) => (v.hidden = true));
+    $(`#view-${name}`).hidden = false;
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ------------------------------------------------------------ home
+
+  function renderHome() {
+    $('#home-title').textContent = checklist.name || 'Smart Checklist';
+    const list = $('#phase-list');
+    list.innerHTML = '';
+
+    checklist.phases.forEach((p) => {
+      const { done, total } = phaseProgress(p);
+      const complete = total > 0 && done === total;
+
+      const li = document.createElement('li');
+      li.className = 'phase-card' + (complete ? ' complete' : '');
+      li.innerHTML = `
+        <div class="phase-main">
+          <span class="phase-name"></span>
+          <span class="phase-meta">${done} / ${total}</span>
+        </div>
+        <div class="phase-bar"><i style="width:${total ? (done / total) * 100 : 0}%"></i></div>
+      `;
+      li.querySelector('.phase-name').textContent = p.name;
+      li.addEventListener('click', () => openPhase(p.id));
+      list.appendChild(li);
+    });
+
+    const totals = checklist.phases.reduce(
+      (a, p) => {
+        const { done, total } = phaseProgress(p);
+        return { done: a.done + done, total: a.total + total };
+      },
+      { done: 0, total: 0 }
+    );
+    $('#home-sub').textContent = `${totals.done} of ${totals.total} items checked`;
+  }
+
+  // ------------------------------------------------------------ run view
+
+  function openPhase(id) {
+    run.phaseId = id;
+    run.index = firstUnchecked(id);
+    run.active = false;
+    run.misses = 0;
+    renderRun();
+    showView('run');
+    setStatus('ready', 'Ready');
+  }
+
+  function firstUnchecked(id) {
+    const p = phaseById(id);
+    if (!p) return 0;
+    const i = p.items.findIndex((it) => !progress[it.id]);
+    return i === -1 ? p.items.length : i;
+  }
+
+  function renderRun() {
+    const p = currentPhase();
+    if (!p) return;
+
+    $('#run-phase').textContent = p.name;
+    const { done, total } = phaseProgress(p);
+    $('#run-count').textContent = `${done} / ${total}`;
+
+    const list = $('#item-list');
+    list.innerHTML = '';
+
+    p.items.forEach((item, i) => {
+      const li = document.createElement('li');
+      const isCurrent = i === run.index && run.index < p.items.length;
+      li.className =
+        'item' +
+        (progress[item.id] ? ' checked' : '') +
+        (isCurrent ? ' current' : '') +
+        (i > run.index && !progress[item.id] ? ' pending' : '');
+      li.dataset.index = String(i);
+      li.innerHTML = `
+        <span class="tick">${progress[item.id] ? '✓' : ''}</span>
+        <span class="challenge"></span>
+        <span class="dots"></span>
+        <span class="response"></span>
+      `;
+      li.querySelector('.challenge').textContent = item.challenge;
+      li.querySelector('.response').textContent = item.response;
+      li.addEventListener('click', () => onItemTap(i));
+      list.appendChild(li);
+    });
+
+    const complete = total > 0 && done === total;
+    $('#phase-done').hidden = !complete;
+    if (complete) {
+      const next = nextPhase();
+      $('#done-title').textContent = `${p.name} — complete`;
+      $('#btn-next-phase').hidden = !next;
+      if (next) $('#btn-next-phase').textContent = `Next: ${next.name}`;
+    }
+
+    scrollCurrentIntoView();
+  }
+
+  function scrollCurrentIntoView() {
+    const el = $('.item.current');
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }
+
+  function nextPhase() {
+    const i = checklist.phases.findIndex((p) => p.id === run.phaseId);
+    return i >= 0 ? checklist.phases[i + 1] : null;
+  }
+
+  function setStatus(kind, text) {
+    $('#mic-dot').className = 'dot ' + kind;
+    $('#status-text').textContent = text;
+  }
+
+  function setHeard(text) {
+    $('#heard').textContent = text ? `“${text}”` : '';
+  }
+
+  /**
+   * Tapping a row is always allowed and always wins. It's the escape hatch for
+   * when voice isn't being picked up — the reason it exists is that negotiating
+   * with a tablet is worse than touching it.
+   */
+  function onItemTap(i) {
+    const p = currentPhase();
+    if (!p) return;
+
+    if (progress[p.items[i].id]) {
+      // Tapping a checked item unchecks it and parks the cursor there.
+      delete progress[p.items[i].id];
+      saveProgress();
+      run.index = i;
+      stopLoop();
+      renderRun();
+      setStatus('ready', 'Unchecked — tap Start to resume');
+      return;
+    }
+
+    run.index = i;
+    confirmCurrent({ spoken: false });
+  }
+
+  // ------------------------------------------------------------ the loop
+
+  async function startLoop() {
+    const p = currentPhase();
+    if (!p) return;
+
+    if (run.index >= p.items.length) {
+      run.index = firstUnchecked(run.phaseId);
+      if (run.index >= p.items.length) {
+        toast('Phase already complete');
+        return;
+      }
+    }
+
+    run.active = true;
+    $('#btn-start').textContent = 'Stop';
+    $('#btn-start').classList.remove('primary');
+    await callOutCurrent();
+  }
+
+  function stopLoop() {
+    run.active = false;
+    Speech.stopListening();
+    Speech.cancelSpeech();
+    $('#btn-start').textContent = 'Start';
+    $('#btn-start').classList.add('primary');
+    setStatus('ready', 'Stopped');
+    setHeard('');
+  }
+
+  /** Speak the challenge, then open the mic. Never both at once. */
+  async function callOutCurrent() {
+    const item = currentItem();
+    if (!item) {
+      finishPhase();
+      return;
+    }
+
+    run.misses = 0;
+    renderRun();
+    setHeard('');
+
+    Speech.stopListening(); // hard gate: mic closed before we make any sound
+    setStatus('speaking', item.challenge);
+
+    await Speech.speak(item.challenge, {
+      voiceURI: settings.voiceURI,
+      rate: settings.rate,
+      pitch: settings.pitch,
+    });
+
+    if (!run.active) return;
+    listen();
+  }
+
+  function listen() {
+    if (!run.active) return;
+
+    if (!settings.voiceInput || !Speech.supported()) {
+      setStatus('waiting', 'Tap the item, or press Check');
+      return;
+    }
+    const ok = Speech.startListening();
+    setStatus(ok ? 'listening' : 'waiting', ok ? 'Listening…' : 'Tap Check to confirm');
+  }
+
+  async function confirmCurrent({ spoken = true } = {}) {
+    const p = currentPhase();
+    const item = currentItem();
+    if (!p || !item) return;
+
+    Speech.stopListening();
+
+    progress[item.id] = true;
+    saveProgress();
+    setStatus('ok', 'Checked');
+    renderRun();
+
+    if (settings.speakResponse) {
+      await Speech.speak(item.response, {
+        voiceURI: settings.voiceURI,
+        rate: settings.rate,
+        pitch: settings.pitch,
+      });
+    }
+
+    run.index += 1;
+
+    if (!run.active) {
+      // Confirmed by tap while the loop was stopped: park on the next item.
+      renderRun();
+      if (run.index >= p.items.length) finishPhase();
+      return;
+    }
+
+    if (run.index >= p.items.length) {
+      finishPhase();
+      return;
+    }
+
+    await sleep(settings.gapMs);
+    if (!run.active) return;
+    await callOutCurrent();
+  }
+
+  async function sayAgain(heardText) {
+    run.misses += 1;
+    setHeard(heardText || '');
+    setStatus('miss', run.misses >= 2 ? 'Not getting that — tap the item' : 'Say again');
+
+    Speech.stopListening();
+    const phrase = run.misses >= 2 ? currentItem().challenge : 'Say again';
+    await Speech.speak(phrase, {
+      voiceURI: settings.voiceURI,
+      rate: settings.rate,
+      pitch: settings.pitch,
+    });
+    if (!run.active) return;
+    listen();
+  }
+
+  async function skipCurrent() {
+    const p = currentPhase();
+    if (!p) return;
+    Speech.stopListening();
+    run.index = Math.min(run.index + 1, p.items.length);
+    if (run.index >= p.items.length) {
+      finishPhase();
+      return;
+    }
+    if (run.active) await callOutCurrent();
+    else renderRun();
+  }
+
+  async function goBack() {
+    const p = currentPhase();
+    if (!p) return;
+    Speech.stopListening();
+    run.index = Math.max(0, run.index - 1);
+    const item = p.items[run.index];
+    if (item) {
+      delete progress[item.id];
+      saveProgress();
+    }
+    if (run.active) await callOutCurrent();
+    else renderRun();
+  }
+
+  function finishPhase() {
+    run.active = false;
+    Speech.stopListening();
+    $('#btn-start').textContent = 'Start';
+    $('#btn-start').classList.add('primary');
+    renderHome();
+    renderRun();
+    setStatus('ok', 'Checklist complete');
+    Speech.speak('Checklist complete', {
+      voiceURI: settings.voiceURI,
+      rate: settings.rate,
+      pitch: settings.pitch,
+    });
+  }
+
+  // ------------------------------------------------------------ recognition wiring
+
+  Speech.onResult = (alternatives) => {
+    if (!run.active) return;
+    const item = currentItem();
+    if (!item) return;
+
+    const r = Match.classifyAll(alternatives, item.response, { threshold: settings.threshold });
+    setHeard(r.transcript);
+
+    switch (r.type) {
+      case 'confirm':
+        confirmCurrent({ spoken: true });
+        break;
+      case 'skip':
+        skipCurrent();
+        break;
+      case 'back':
+        goBack();
+        break;
+      case 'repeat':
+        callOutCurrent();
+        break;
+      case 'hold':
+        stopLoop();
+        break;
+      default:
+        sayAgain(r.transcript);
+    }
+  };
+
+  Speech.onStateChange = (s) => {
+    if (s.error === 'mic-denied') {
+      settings.voiceInput = false;
+      Store.saveSettings(settings);
+      $('#set-voice-input').checked = false;
+      setStatus('miss', 'Microphone blocked — using tap only');
+      toast('Microphone permission denied. Tap items to check them.');
+    }
+  };
+
+  // ------------------------------------------------------------ editor
+
+  function renderEditor() {
+    $('#edit-name').value = checklist.name || '';
+    const wrap = $('#editor-phases');
+    wrap.innerHTML = '';
+
+    checklist.phases.forEach((phase, pi) => {
+      const box = document.createElement('div');
+      box.className = 'ed-phase';
+      box.innerHTML = `
+        <div class="ed-phase-head">
+          <input class="ed-phase-name" type="text" value="">
+          <div class="ed-phase-btns">
+            <button class="btn ghost icon" data-act="up" title="Move up">↑</button>
+            <button class="btn ghost icon" data-act="down" title="Move down">↓</button>
+            <button class="btn ghost icon danger" data-act="del-phase" title="Delete phase">✕</button>
+          </div>
+        </div>
+        <div class="ed-items"></div>
+        <button class="btn ghost sm" data-act="add-item">+ Add item</button>
+      `;
+
+      const nameInput = box.querySelector('.ed-phase-name');
+      nameInput.value = phase.name;
+      nameInput.addEventListener('input', () => {
+        phase.name = nameInput.value;
+        persist();
+      });
+
+      const itemsWrap = box.querySelector('.ed-items');
+      phase.items.forEach((item, ii) => {
+        const row = document.createElement('div');
+        row.className = 'ed-item';
+        row.innerHTML = `
+          <input class="ed-ch" type="text" placeholder="Challenge">
+          <input class="ed-rp" type="text" placeholder="Response">
+          <button class="btn ghost icon danger" data-act="del-item">✕</button>
+        `;
+        const ch = row.querySelector('.ed-ch');
+        const rp = row.querySelector('.ed-rp');
+        ch.value = item.challenge;
+        rp.value = item.response;
+        ch.addEventListener('input', () => {
+          item.challenge = ch.value;
+          persist();
+        });
+        rp.addEventListener('input', () => {
+          item.response = rp.value;
+          persist();
+        });
+        row.querySelector('[data-act="del-item"]').addEventListener('click', () => {
+          phase.items.splice(ii, 1);
+          persist();
+          renderEditor();
+        });
+        itemsWrap.appendChild(row);
+      });
+
+      box.querySelector('[data-act="add-item"]').addEventListener('click', () => {
+        phase.items.push({ id: Store.uid(), challenge: '', response: '' });
+        persist();
+        renderEditor();
+      });
+
+      box.querySelector('[data-act="del-phase"]').addEventListener('click', () => {
+        if (!confirm(`Delete the "${phase.name}" phase and all its items?`)) return;
+        checklist.phases.splice(pi, 1);
+        persist();
+        renderEditor();
+      });
+
+      box.querySelector('[data-act="up"]').addEventListener('click', () => {
+        if (pi === 0) return;
+        [checklist.phases[pi - 1], checklist.phases[pi]] = [checklist.phases[pi], checklist.phases[pi - 1]];
+        persist();
+        renderEditor();
+      });
+
+      box.querySelector('[data-act="down"]').addEventListener('click', () => {
+        if (pi === checklist.phases.length - 1) return;
+        [checklist.phases[pi + 1], checklist.phases[pi]] = [checklist.phases[pi], checklist.phases[pi + 1]];
+        persist();
+        renderEditor();
+      });
+
+      wrap.appendChild(box);
+    });
+  }
+
+  function persist() {
+    Store.saveChecklist(checklist);
+    $('#edit-sub').textContent = 'Saved';
+    clearTimeout(persist._t);
+    persist._t = setTimeout(() => ($('#edit-sub').textContent = 'Changes save automatically'), 1200);
+  }
+
+  // ------------------------------------------------------------ settings
+
+  function renderSettings() {
+    const sel = $('#set-voice');
+    const voices = Speech.listVoices();
+    sel.innerHTML = '<option value="">System default</option>';
+    voices.forEach((v) => {
+      const o = document.createElement('option');
+      o.value = v.voiceURI;
+      o.textContent = `${v.name} (${v.lang})`;
+      sel.appendChild(o);
+    });
+    sel.value = settings.voiceURI || '';
+
+    $('#set-rate').value = settings.rate;
+    $('#rate-val').textContent = Number(settings.rate).toFixed(2);
+    $('#set-pitch').value = settings.pitch;
+    $('#pitch-val').textContent = Number(settings.pitch).toFixed(2);
+    $('#set-voice-input').checked = settings.voiceInput;
+    $('#set-speak-response').checked = settings.speakResponse;
+    $('#set-threshold').value = settings.threshold;
+    $('#thr-val').textContent = Math.round(settings.threshold * 100) + '%';
+    $('#set-gap').value = settings.gapMs;
+    $('#gap-val').textContent = settings.gapMs + ' ms';
+
+    const sttOk = Speech.supported();
+    $('#diag').innerHTML = `
+      <p><b>Speech recognition:</b> ${sttOk ? 'available' : 'NOT available in this browser'}</p>
+      <p><b>Voices found:</b> ${voices.length}</p>
+      <p class="hint">${
+        sttOk
+          ? 'Voice recognition needs an internet connection on Android and iOS.'
+          : 'Open this page in Chrome (Android) or Safari (iOS) — other browsers do not support voice input.'
+      }</p>
+    `;
+    $('#settings-sub').textContent = sttOk ? 'Voice ready' : 'Tap-only mode';
+  }
+
+  function bindSettings() {
+    $('#set-voice').addEventListener('change', (e) => {
+      settings.voiceURI = e.target.value;
+      Store.saveSettings(settings);
+    });
+    $('#set-rate').addEventListener('input', (e) => {
+      settings.rate = parseFloat(e.target.value);
+      $('#rate-val').textContent = settings.rate.toFixed(2);
+      Store.saveSettings(settings);
+    });
+    $('#set-pitch').addEventListener('input', (e) => {
+      settings.pitch = parseFloat(e.target.value);
+      $('#pitch-val').textContent = settings.pitch.toFixed(2);
+      Store.saveSettings(settings);
+    });
+    $('#set-voice-input').addEventListener('change', (e) => {
+      settings.voiceInput = e.target.checked;
+      Store.saveSettings(settings);
+      if (!settings.voiceInput) Speech.stopListening();
+    });
+    $('#set-speak-response').addEventListener('change', (e) => {
+      settings.speakResponse = e.target.checked;
+      Store.saveSettings(settings);
+    });
+    $('#set-threshold').addEventListener('input', (e) => {
+      settings.threshold = parseFloat(e.target.value);
+      $('#thr-val').textContent = Math.round(settings.threshold * 100) + '%';
+      Store.saveSettings(settings);
+    });
+    $('#set-gap').addEventListener('input', (e) => {
+      settings.gapMs = parseInt(e.target.value, 10);
+      $('#gap-val').textContent = settings.gapMs + ' ms';
+      Store.saveSettings(settings);
+    });
+    $('#btn-test-voice').addEventListener('click', () => {
+      Speech.speak('Landing gear. Down and locked.', {
+        voiceURI: settings.voiceURI,
+        rate: settings.rate,
+        pitch: settings.pitch,
+      });
+    });
+  }
+
+  // ------------------------------------------------------------ import / export
+
+  function exportChecklist() {
+    const blob = new Blob([JSON.stringify(checklist, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(checklist.name || 'checklist').replace(/[^\w-]+/g, '-').toLowerCase()}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  function importChecklist(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!parsed || !Array.isArray(parsed.phases)) throw new Error('Not a checklist file');
+        // Guarantee ids — a hand-written or exported file may be missing them,
+        // and progress is keyed on item id.
+        parsed.phases.forEach((p) => {
+          if (!p.id) p.id = Store.uid();
+          (p.items || []).forEach((i) => {
+            if (!i.id) i.id = Store.uid();
+          });
+        });
+        checklist = parsed;
+        persist();
+        renderEditor();
+        renderHome();
+        toast('Checklist imported');
+      } catch (err) {
+        toast('Could not read that file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ------------------------------------------------------------ wiring
+
+  function bind() {
+    $('#btn-edit').addEventListener('click', () => {
+      renderEditor();
+      showView('edit');
+    });
+    $('#btn-settings').addEventListener('click', () => {
+      renderSettings();
+      showView('settings');
+    });
+    $('#btn-edit-back').addEventListener('click', () => {
+      renderHome();
+      showView('home');
+    });
+    $('#btn-settings-back').addEventListener('click', () => {
+      renderHome();
+      showView('home');
+    });
+    $('#btn-back-home').addEventListener('click', () => {
+      stopLoop();
+      renderHome();
+      showView('home');
+    });
+
+    $('#btn-start').addEventListener('click', () => {
+      if (run.active) stopLoop();
+      else startLoop();
+    });
+    $('#btn-confirm').addEventListener('click', () => {
+      if (currentItem()) confirmCurrent({ spoken: false });
+    });
+    $('#btn-repeat').addEventListener('click', () => {
+      if (run.active) callOutCurrent();
+      else if (currentItem()) {
+        Speech.speak(currentItem().challenge, {
+          voiceURI: settings.voiceURI,
+          rate: settings.rate,
+          pitch: settings.pitch,
+        });
+      }
+    });
+
+    $('#btn-restart-phase').addEventListener('click', () => {
+      const p = currentPhase();
+      if (!p) return;
+      p.items.forEach((i) => delete progress[i.id]);
+      saveProgress();
+      run.index = 0;
+      stopLoop();
+      renderRun();
+      renderHome();
+    });
+
+    $('#btn-next-phase').addEventListener('click', () => {
+      const n = nextPhase();
+      if (n) openPhase(n.id);
+    });
+
+    $('#btn-reset-progress').addEventListener('click', () => {
+      if (!confirm('Clear every checkmark in the whole checklist?')) return;
+      progress = {};
+      saveProgress();
+      renderHome();
+      toast('All checkmarks cleared');
+    });
+
+    $('#edit-name').addEventListener('input', (e) => {
+      checklist.name = e.target.value;
+      persist();
+    });
+    $('#btn-add-phase').addEventListener('click', () => {
+      checklist.phases.push({ id: Store.uid(), name: 'New phase', items: [] });
+      persist();
+      renderEditor();
+    });
+    $('#btn-restore-default').addEventListener('click', () => {
+      if (!confirm('Discard your edits and restore the default 737 checklist?')) return;
+      checklist = Store.resetChecklist();
+      Store.saveChecklist(checklist);
+      renderEditor();
+      renderHome();
+      toast('Default checklist restored');
+    });
+
+    $('#btn-export').addEventListener('click', exportChecklist);
+    $('#btn-import').addEventListener('click', () => $('#import-file').click());
+    $('#import-file').addEventListener('change', (e) => {
+      if (e.target.files[0]) importChecklist(e.target.files[0]);
+      e.target.value = '';
+    });
+
+    bindSettings();
+
+    // Voices arrive asynchronously on Android; refresh the picker when they do.
+    if (window.speechSynthesis) {
+      window.speechSynthesis.addEventListener?.('voiceschanged', () => {
+        if (!$('#view-settings').hidden) renderSettings();
+      });
+    }
+
+    // Stop the mic if the app goes to the background — an open recognizer that
+    // survives a screen lock is both a battery drain and a privacy surprise.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && run.active) stopLoop();
+    });
+  }
+
+  // ------------------------------------------------------------ boot
+
+  function boot() {
+    Speech.setLang('en-US');
+    bind();
+    renderHome();
+    showView('home');
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  }
+
+  boot();
+})();
