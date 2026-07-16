@@ -5,9 +5,15 @@
 (() => {
   const PROGRESS_KEY = 'sc.progress.v1';
 
-  let checklist = Store.loadChecklist();
+  let profiles = Store.loadProfiles();
+  let activeId = Store.loadActiveId(profiles);
   let settings = Store.loadSettings();
   let progress = loadProgress();
+
+  /** The profile currently being run and edited. */
+  function checklistOf() {
+    return profiles.find((p) => p.id === activeId) || profiles[0];
+  }
 
   const run = {
     phaseId: null,
@@ -34,7 +40,7 @@
   }
 
   function phaseById(id) {
-    return checklist.phases.find((p) => p.id === id);
+    return checklistOf().phases.find((p) => p.id === id);
   }
 
   function currentPhase() {
@@ -69,12 +75,34 @@
 
   // ------------------------------------------------------------ home
 
+  /** Fill a <select> with the profile list. Used on home and in the editor. */
+  function renderProfileOptions(sel) {
+    sel.innerHTML = '';
+    profiles.forEach((p) => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      const n = p.phases.reduce((a, ph) => a + ph.items.length, 0);
+      o.textContent = `${p.name || 'Untitled'} (${n})`;
+      sel.appendChild(o);
+    });
+    sel.value = activeId;
+  }
+
+  function switchProfile(id) {
+    if (!profiles.some((p) => p.id === id)) return;
+    stopLoop();
+    activeId = id;
+    Store.saveActiveId(id);
+    renderHome();
+    showView('home');
+  }
+
   function renderHome() {
-    $('#home-title').textContent = checklist.name || 'Smart Checklist';
+    renderProfileOptions($('#profile-select'));
     const list = $('#phase-list');
     list.innerHTML = '';
 
-    checklist.phases.forEach((p) => {
+    checklistOf().phases.forEach((p) => {
       const { done, total } = phaseProgress(p);
       const complete = total > 0 && done === total;
 
@@ -92,7 +120,7 @@
       list.appendChild(li);
     });
 
-    const totals = checklist.phases.reduce(
+    const totals = checklistOf().phases.reduce(
       (a, p) => {
         const { done, total } = phaseProgress(p);
         return { done: a.done + done, total: a.total + total };
@@ -146,9 +174,12 @@
         <span class="challenge"></span>
         <span class="dots"></span>
         <span class="response"></span>
+        ${item.note ? '<span class="note"></span>' : ''}
       `;
       li.querySelector('.challenge').textContent = item.challenge;
       li.querySelector('.response').textContent = item.response;
+      // Notes are shown, never spoken — "GSX" read aloud mid-callout is noise.
+      if (item.note) li.querySelector('.note').textContent = item.note;
       li.addEventListener('click', () => onItemTap(i));
       list.appendChild(li);
     });
@@ -173,8 +204,8 @@
   }
 
   function nextPhase() {
-    const i = checklist.phases.findIndex((p) => p.id === run.phaseId);
-    return i >= 0 ? checklist.phases[i + 1] : null;
+    const i = checklistOf().phases.findIndex((p) => p.id === run.phaseId);
+    return i >= 0 ? checklistOf().phases[i + 1] : null;
   }
 
   function setStatus(kind, text) {
@@ -417,11 +448,13 @@
   // ------------------------------------------------------------ editor
 
   function renderEditor() {
-    $('#edit-name').value = checklist.name || '';
+    renderProfileOptions($('#edit-profile-select'));
+    $('#edit-name').value = checklistOf().name || '';
+    $('#btn-delete-profile').disabled = profiles.length <= 1;
     const wrap = $('#editor-phases');
     wrap.innerHTML = '';
 
-    checklist.phases.forEach((phase, pi) => {
+    checklistOf().phases.forEach((phase, pi) => {
       const box = document.createElement('div');
       box.className = 'ed-phase';
       box.innerHTML = `
@@ -481,21 +514,21 @@
 
       box.querySelector('[data-act="del-phase"]').addEventListener('click', () => {
         if (!confirm(`Delete the "${phase.name}" phase and all its items?`)) return;
-        checklist.phases.splice(pi, 1);
+        checklistOf().phases.splice(pi, 1);
         persist();
         renderEditor();
       });
 
       box.querySelector('[data-act="up"]').addEventListener('click', () => {
         if (pi === 0) return;
-        [checklist.phases[pi - 1], checklist.phases[pi]] = [checklist.phases[pi], checklist.phases[pi - 1]];
+        [checklistOf().phases[pi - 1], checklistOf().phases[pi]] = [checklistOf().phases[pi], checklistOf().phases[pi - 1]];
         persist();
         renderEditor();
       });
 
       box.querySelector('[data-act="down"]').addEventListener('click', () => {
-        if (pi === checklist.phases.length - 1) return;
-        [checklist.phases[pi + 1], checklist.phases[pi]] = [checklist.phases[pi], checklist.phases[pi + 1]];
+        if (pi === checklistOf().phases.length - 1) return;
+        [checklistOf().phases[pi + 1], checklistOf().phases[pi]] = [checklistOf().phases[pi], checklistOf().phases[pi + 1]];
         persist();
         renderEditor();
       });
@@ -505,7 +538,7 @@
   }
 
   function persist() {
-    Store.saveChecklist(checklist);
+    Store.saveProfiles(profiles);
     $('#edit-sub').textContent = 'Saved';
     clearTimeout(persist._t);
     persist._t = setTimeout(() => ($('#edit-sub').textContent = 'Changes save automatically'), 1200);
@@ -598,7 +631,7 @@
     const blob = new Blob([JSON.stringify(checklist, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${(checklist.name || 'checklist').replace(/[^\w-]+/g, '-').toLowerCase()}.json`;
+    a.download = `${(checklistOf().name || 'checklist').replace(/[^\w-]+/g, '-').toLowerCase()}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
@@ -609,19 +642,24 @@
       try {
         const parsed = JSON.parse(reader.result);
         if (!parsed || !Array.isArray(parsed.phases)) throw new Error('Not a checklist file');
+        // Import adds a profile rather than replacing the active one, so a
+        // mis-picked file can never wipe work you already have.
+        parsed.id = 'p' + Store.uid();
+        parsed.name = parsed.name || 'Imported checklist';
         // Guarantee ids — a hand-written or exported file may be missing them,
-        // and progress is keyed on item id.
+        // and progress is keyed on item id. Re-id everything so an import of a
+        // profile you already have cannot share its checkmarks.
         parsed.phases.forEach((p) => {
-          if (!p.id) p.id = Store.uid();
-          (p.items || []).forEach((i) => {
-            if (!i.id) i.id = Store.uid();
-          });
+          p.id = Store.uid();
+          (p.items || []).forEach((i) => (i.id = Store.uid()));
         });
-        checklist = parsed;
+        profiles.push(parsed);
+        activeId = parsed.id;
+        Store.saveActiveId(activeId);
         persist();
         renderEditor();
         renderHome();
-        toast('Checklist imported');
+        toast(`Imported "${parsed.name}"`);
       } catch (err) {
         toast('Could not read that file: ' + err.message);
       }
@@ -697,21 +735,77 @@
     });
 
     $('#edit-name').addEventListener('input', (e) => {
-      checklist.name = e.target.value;
+      checklistOf().name = e.target.value;
       persist();
     });
     $('#btn-add-phase').addEventListener('click', () => {
-      checklist.phases.push({ id: Store.uid(), name: 'New phase', items: [] });
+      checklistOf().phases.push({ id: Store.uid(), name: 'New phase', items: [] });
       persist();
       renderEditor();
     });
     $('#btn-restore-default').addEventListener('click', () => {
-      if (!confirm('Discard your edits and restore the default 737 checklist?')) return;
-      checklist = Store.resetChecklist();
-      Store.saveChecklist(checklist);
+      if (!confirm('Discard every profile and your edits, and restore the defaults?')) return;
+      profiles = Store.resetProfiles();
+      activeId = profiles[0].id;
+      Store.saveActiveId(activeId);
       renderEditor();
       renderHome();
-      toast('Default checklist restored');
+      toast('Default profiles restored');
+    });
+
+    $('#profile-select').addEventListener('change', (e) => switchProfile(e.target.value));
+
+    $('#edit-profile-select').addEventListener('change', (e) => {
+      activeId = e.target.value;
+      Store.saveActiveId(activeId);
+      renderEditor();
+      renderHome();
+    });
+
+    $('#btn-new-profile').addEventListener('click', () => {
+      const p = { id: 'p' + Store.uid(), name: 'New profile', phases: [] };
+      profiles.push(p);
+      activeId = p.id;
+      Store.saveActiveId(activeId);
+      persist();
+      renderEditor();
+      renderHome();
+      $('#edit-name').focus();
+      $('#edit-name').select();
+    });
+
+    $('#btn-duplicate-profile').addEventListener('click', () => {
+      const src = checklistOf();
+      const copy = structuredClone(src);
+      copy.id = 'p' + Store.uid();
+      copy.name = `${src.name} copy`;
+      // Fresh item ids, or the copy would share checkmarks with the original.
+      copy.phases.forEach((ph) => {
+        ph.id = Store.uid();
+        ph.items.forEach((it) => (it.id = Store.uid()));
+      });
+      profiles.push(copy);
+      activeId = copy.id;
+      Store.saveActiveId(activeId);
+      persist();
+      renderEditor();
+      renderHome();
+      toast('Profile duplicated');
+    });
+
+    $('#btn-delete-profile').addEventListener('click', () => {
+      if (profiles.length <= 1) return;
+      const p = checklistOf();
+      if (!confirm(`Delete the profile "${p.name}" and all its phases?`)) return;
+      p.phases.forEach((ph) => ph.items.forEach((it) => delete progress[it.id]));
+      saveProgress();
+      profiles = profiles.filter((x) => x.id !== p.id);
+      activeId = profiles[0].id;
+      Store.saveActiveId(activeId);
+      persist();
+      renderEditor();
+      renderHome();
+      toast('Profile deleted');
     });
 
     $('#btn-export').addEventListener('click', exportChecklist);

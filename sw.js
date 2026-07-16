@@ -6,12 +6,13 @@
  * the platform's servers); text-to-speech and tap-to-check work fully offline.
  */
 
-const CACHE = 'smart-checklist-v1';
+const CACHE = 'smart-checklist-v2';
 
 const SHELL = [
   './',
   './index.html',
   './css/style.css',
+  './js/profile-pmdg737.js',
   './js/data.js',
   './js/store.js',
   './js/match.js',

@@ -48,12 +48,42 @@ Voice commands available at any point: `say again`, `skip`, `back`, `hold`.
 it's the escape hatch, and it's why the app is still usable when the recognizer isn't.
 Tapping an already-checked item unchecks it and parks the cursor there.
 
+## Profiles
+
+The app holds several checklists and you switch between them from the picker at the top of
+the home screen. Each profile keeps its own checkmarks, so ticking an item in one never
+touches another. It ships with two:
+
+- **Boeing 737 — Generic** (55 items) — a condensed NG flow.
+- **Boeing 737 PROC +CHECKLIST+GSX** (234 items) — the real procedure, generated from
+  `data/pmdg-737-maor-v2.csv`.
+
+In the editor you can add, rename, duplicate, or delete profiles. Duplicating re-issues
+every item id, so the copy starts with a clean set of checkmarks rather than sharing the
+original's.
+
+### Regenerating the PMDG profile from CSV
+
+The CSV is the source of truth; `js/profile-pmdg737.js` is generated and should not be
+hand-edited:
+
+```sh
+node scripts/import-csv.js data/pmdg-737-maor-v2.csv pmdg737 js/profile-pmdg737.js
+```
+
+The CSV nests `section`s inside `procedure`s; both become flat phases, since a procedure's
+loose flow items and its formal CHECKLIST are run at different moments. Rows reading
+"... CHECKLIST COMPLETED" are end markers — items after one belong to the procedure's flow
+resuming, and land in a "(continued)" phase. The `item_note` column becomes a note.
+
 ## Editing checklists
 
 **Edit** opens the editor: rename phases, reorder them, add/remove phases, add/remove/edit
-items. Changes save as you type.
+items. Changes save as you type. The editor works on the profile currently selected.
 
-**Export** writes a JSON file; **Import** reads one back. The format:
+**Export** writes the active profile to a JSON file; **Import** adds a file as a *new*
+profile rather than overwriting the active one, so picking the wrong file can't destroy
+work. The format:
 
 ```json
 {
@@ -63,7 +93,7 @@ items. Changes save as you type.
       "id": "preflight",
       "name": "Preflight",
       "items": [
-        { "id": "pf1", "challenge": "Parking brake", "response": "Set" }
+        { "id": "pf1", "challenge": "Parking brake", "response": "Set", "note": "GSX" }
       ]
     }
   ]
@@ -72,7 +102,8 @@ items. Changes save as you type.
 
 `challenge` is called out; `response` is what you answer. `___` marks a per-flight value —
 it's stripped before speaking and ignored when matching, so `"Heading ___"` reads as
-"Heading" and doesn't demand you say a number.
+"Heading" and doesn't demand you say a number. `note` is optional, shown in amber under the
+item and **never spoken** — "GSX" read aloud mid-callout is noise.
 
 The bundled 737 checklist is a generic condensed NG flow — a starting point. Replace it
 with your real one via Import, or edit it in place.
@@ -85,6 +116,20 @@ Everything is matched against that closed set. This is what makes it usable next
 running sim — steady-state engine rumble doesn't transcribe to "check". Anything it can't
 place confidently becomes "say again", never a guess. Ask twice and it re-reads the full
 challenge and tells you to tap.
+
+Three things the matcher does that are worth knowing (`js/match.js`):
+
+- **Scores recall *and* precision.** Recall alone is not enough: half the real responses are
+  a single word ("RUN", "CLEAR", "ENGINE"), so any sentence containing it — ATC on the
+  speakers, "the engine is running loud" — would score perfectly and check the item off.
+  Requiring precision too means a stray keyword inside a sentence is not an answer.
+- **Expands abbreviations.** The card says "AS REQ", "CONT", "ARM"; you say "as required",
+  "continuous", "armed". A word matches when the shorter is a prefix of the longer, with a
+  3-character floor so "on" can't match "one".
+- **Treats "X OR Y" as alternatives.** "15 OR 30 OR 40" wants any one branch, not half of
+  all of them.
+
+Saying **"check"** confirms any item, whatever its response.
 
 **The mic is closed whenever the app is speaking.** The tablet speaker feeds straight into
 the tablet mic, so a live recognizer would transcribe the app's own callout and check the
@@ -110,13 +155,24 @@ Tune **Match strictness** in Settings if you get false checks (raise it) or too 
 ## Files
 
 ```
-index.html          app shell, all four views
-css/style.css       dark cockpit theme, touch-sized targets
-js/data.js          the default 737 checklist
-js/store.js         localStorage persistence
-js/match.js         closed-set voice matching — the noise-rejection logic
-js/speech.js        TTS/STT wrapper; enforces "never both at once"
-js/app.js           run state machine, editor, settings
-sw.js               offline app shell
-scripts/make-icons.js   regenerates icons/ (node scripts/make-icons.js)
+index.html               app shell, all four views
+css/style.css            dark cockpit theme, touch-sized targets
+data/*.csv               source checklists (the truth for generated profiles)
+js/profile-pmdg737.js    GENERATED from data/pmdg-737-maor-v2.csv — do not hand-edit
+js/data.js               the generic 737 checklist + the shipped profile list
+js/store.js              localStorage persistence, profiles, legacy migration
+js/match.js              closed-set voice matching — the noise-rejection logic
+js/speech.js             TTS/STT wrapper; enforces "never both at once"
+js/app.js                run state machine, editor, settings
+sw.js                    offline app shell
+scripts/make-icons.js    regenerates icons/
+scripts/import-csv.js    CSV -> profile
 ```
+
+### Known quirks in the imported PMDG profile
+
+Imported verbatim from the CSV, typos included, because the CSV is the source of truth.
+These are spoken aloud, so they are worth fixing at the source and re-importing:
+`SINGS` (→ signs, and TTS reads it as the word "sings"), `AERMD` (→ armed — the one typo
+that also stops voice matching; "check" still works), `PERSSURIZATION` ×2, `AIRERON`,
+`ANIT COLL LIGHT`, `TRANSER`, `HEADIND`, `WINDOWHEAT`, `FUELPUMPS`.

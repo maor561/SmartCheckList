@@ -11,6 +11,7 @@
  */
 
 const DEFAULT_CHECKLIST = {
+  id: 'generic737',
   name: 'Boeing 737 — Generic',
   phases: [
     {
@@ -130,3 +131,14 @@ const DEFAULT_CHECKLIST = {
     },
   ],
 };
+
+/**
+ * The profiles the app ships with. Fresh clones each call — callers edit these.
+ * PROFILE_PMDG737 is generated from data/pmdg-737-maor-v2.csv; see
+ * scripts/import-csv.js.
+ */
+function defaultProfiles() {
+  const list = [structuredClone(DEFAULT_CHECKLIST)];
+  if (typeof PROFILE_PMDG737 !== 'undefined') list.push(structuredClone(PROFILE_PMDG737));
+  return list;
+}

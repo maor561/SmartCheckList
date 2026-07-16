@@ -74,6 +74,33 @@ html, body {
 
 .bar-actions { display: flex; gap: 8px; flex: none; }
 
+/* Profile switcher: reads as the page title until you touch it. */
+.profile-select {
+  width: 100%;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 2px 26px 2px 6px;
+  margin-left: -6px;
+  min-height: 0;
+  cursor: pointer;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg-dim) 50%),
+    linear-gradient(135deg, var(--fg-dim) 50%, transparent 50%);
+  background-position: right 12px center, right 7px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.profile-select:hover { border-color: var(--line); }
+.profile-select:focus { outline: none; border-color: var(--blue); }
+.profile-select option { background: var(--bg-2); color: var(--fg); font-size: 16px; }
+
 /* ---------------------------------------------------------------- buttons */
 
 .btn {
@@ -199,6 +226,17 @@ html, body {
   color: var(--fg-dim);
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+/* Notes ("GSX", "when suitable", "29.92 / 1013") get their own line under the
+   item — context for the eye, never spoken. */
+.item .note {
+  flex: 1 0 100%;
+  padding-left: 34px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--amber);
+  opacity: 0.85;
 }
 
 .item.pending { opacity: 0.5; }
@@ -400,10 +438,12 @@ input[type="checkbox"] {
    editing text you cannot read. Below this width the challenge takes its own
    line and the response shares a line with the delete button. */
 @media (max-width: 620px) {
-  /* The name and its buttons do fit together at phone width; wrap is only a
-     safety net for something narrower. */
+  /* Real phase names are long ("CRUISE & DESCENT PREPERATION — Before TOD
+     (100MN)"), so the name gets the full width and the reorder/delete buttons
+     take the line below. Sharing a line looks tidier but leaves ~24 characters
+     of a 48-character name visible, which is not enough to edit against. */
   .ed-phase-head { flex-wrap: wrap; row-gap: 8px; }
-  .ed-phase-name { flex: 1 1 150px; min-width: 0; }
+  .ed-phase-name { flex: 1 1 100%; }
   .ed-phase-btns { margin-left: auto; }
 
   .ed-items { gap: 14px; }
@@ -421,6 +461,9 @@ input[type="checkbox"] {
      shoves the delete button onto a third line. */
   .ed-item .ed-rp { flex: 1 1 0; min-width: 0; }
 }
+
+.profile-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.profile-actions .btn:disabled { opacity: 0.35; cursor: default; }
 
 .danger-zone { margin-top: 32px; text-align: center; }
 

@@ -21,7 +21,7 @@
   <section class="view" id="view-home">
     <header class="bar">
       <div class="bar-title">
-        <h1 id="home-title">Smart Checklist</h1>
+        <select id="profile-select" class="profile-select" aria-label="Checklist profile"></select>
         <p class="sub" id="home-sub">Select a phase</p>
       </div>
       <div class="bar-actions">
@@ -88,13 +88,25 @@
     </header>
     <div class="scroll">
       <label class="field">
-        <span>Checklist name</span>
+        <span>Editing profile</span>
+        <select id="edit-profile-select"></select>
+      </label>
+      <label class="field">
+        <span>Profile name</span>
         <input type="text" id="edit-name">
       </label>
+      <div class="profile-actions">
+        <button class="btn sm" id="btn-new-profile">+ New</button>
+        <button class="btn sm" id="btn-duplicate-profile">Duplicate</button>
+        <button class="btn sm ghost danger" id="btn-delete-profile">Delete profile</button>
+      </div>
+
+      <div class="sep"></div>
+
       <div id="editor-phases"></div>
       <button class="btn wide" id="btn-add-phase">+ Add phase</button>
       <div class="danger-zone">
-        <button class="btn ghost danger" id="btn-restore-default">Restore default 737 checklist</button>
+        <button class="btn ghost danger" id="btn-restore-default">Restore all default profiles</button>
       </div>
     </div>
     <input type="file" id="import-file" accept="application/json,.json" hidden>
@@ -160,6 +172,7 @@
 
 <div class="toast" id="toast" hidden></div>
 
+<script src="js/profile-pmdg737.js"></script>
 <script src="js/data.js"></script>
 <script src="js/store.js"></script>
 <script src="js/match.js"></script>
