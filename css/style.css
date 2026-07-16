@@ -148,10 +148,17 @@ html, body {
 
 .item-list { list-style: none; margin: 0; padding: 0; }
 
+/* The row is content-driven, not breakpoint-driven: challenge, leader dots and
+   response sit on one line while they fit, and the response drops to its own
+   right-aligned line the moment they don't. That keeps it correct on the phone,
+   on the tablet in either orientation, and for whatever text gets typed into the
+   editor — without guessing a device width. */
 .item {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px;
+  column-gap: 10px;
+  row-gap: 2px;
   padding: 14px 12px;
   border-radius: var(--radius);
   border: 1px solid transparent;
@@ -168,16 +175,31 @@ html, body {
   font-weight: 700;
 }
 
-.item .challenge { flex: none; font-weight: 600; }
+/* Never shrink — shrinking would clip the text instead of wrapping the row. */
+.item .challenge {
+  flex: 0 0 auto;
+  max-width: 100%;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 
 .item .dots {
-  flex: 1;
-  min-width: 20px;
+  flex: 1 1 24px;
+  min-width: 24px;
   border-bottom: 2px dotted var(--fg-faint);
   transform: translateY(-5px);
 }
 
-.item .response { flex: none; color: var(--fg-dim); font-weight: 600; }
+/* margin-left:auto keeps the response hard right on both the shared line and
+   its own line after a wrap. */
+.item .response {
+  flex: 0 0 auto;
+  max-width: 100%;
+  margin-left: auto;
+  color: var(--fg-dim);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 
 .item.pending { opacity: 0.5; }
 .item.checked { opacity: 0.55; }
@@ -247,6 +269,46 @@ html, body {
 }
 
 .console-actions { display: flex; gap: 10px; }
+
+/* ---------------------------------------------------------------- short screens
+
+   Phone in landscape (~430px tall) and the tablet in landscape. Header plus
+   console otherwise eat half the height and only three items stay on screen.
+   Trim the chrome, fold the status and transcript onto one line, and keep the
+   buttons at 44px — they are still being tapped in a cockpit. */
+
+@media (max-height: 560px) {
+  .bar { padding: 7px 16px; }
+  .bar h1 { font-size: 17px; }
+  .bar .sub { font-size: 11px; margin-top: 0; }
+  .bar .btn { min-height: 38px; padding: 7px 12px; font-size: 14px; }
+  .bar .btn.icon { min-width: 38px; }
+
+  .scroll { padding: 8px 16px; }
+
+  .item { padding: 8px 12px; font-size: 17px; }
+  .item.current { padding: 12px; font-size: 19px; }
+
+  .console {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "status heard"
+      "actions actions";
+    gap: 7px 12px;
+    padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .console-status { grid-area: status; min-height: 0; font-size: 13px; }
+  .heard { grid-area: heard; margin: 0; text-align: right; min-height: 0; font-size: 13px; }
+  .console-actions { grid-area: actions; }
+
+  .btn.big { min-height: 44px; font-size: 15px; }
+
+  .phase-done { padding: 16px 20px; }
+  .done-mark { font-size: 36px; }
+  .phase-done h2 { margin: 6px 0 14px; font-size: 18px; }
+}
 
 /* ---------------------------------------------------------------- fields */
 
@@ -333,6 +395,32 @@ input[type="checkbox"] {
 .ed-item { display: flex; gap: 8px; align-items: center; }
 .ed-item .ed-ch { flex: 1.2; }
 .ed-item .ed-rp { flex: 1; }
+
+/* Side by side, these two inputs squeeze to ~150px on a phone and you end up
+   editing text you cannot read. Below this width the challenge takes its own
+   line and the response shares a line with the delete button. */
+@media (max-width: 620px) {
+  /* The name and its buttons do fit together at phone width; wrap is only a
+     safety net for something narrower. */
+  .ed-phase-head { flex-wrap: wrap; row-gap: 8px; }
+  .ed-phase-name { flex: 1 1 150px; min-width: 0; }
+  .ed-phase-btns { margin-left: auto; }
+
+  .ed-items { gap: 14px; }
+
+  .ed-item {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .ed-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .ed-item .ed-ch { flex: 1 1 100%; }
+  /* basis 0, not auto — with an auto basis the input is sized to its content and
+     shoves the delete button onto a third line. */
+  .ed-item .ed-rp { flex: 1 1 0; min-width: 0; }
+}
 
 .danger-zone { margin-top: 32px; text-align: center; }
 
