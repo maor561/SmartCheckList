@@ -15,6 +15,8 @@ const Store = (() => {
     voiceInput: true,
     speakResponse: true, // read the expected response back after you confirm
     autoNextPhase: true, // roll straight into the next checklist when one ends
+    runMode: 'confirm', // 'confirm' waits for you; 'auto' reads and advances itself
+    autoHoldMs: 2500, // auto mode: your window to do the item before the readback
     threshold: 0.5,
     gapMs: 400, // silence between confirming an item and calling the next
   };

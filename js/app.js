@@ -293,6 +293,19 @@
     });
 
     if (!run.active) return;
+
+    if (settings.runMode === 'auto') {
+      // The pause is the point: it's your window to actually do the item before
+      // the readback lands. The mic stays shut — in auto mode the app talks
+      // almost continuously, and a recognizer opening between callouts would
+      // mostly hear the app itself. Stop and the item rows still work by touch.
+      setStatus('waiting', 'Auto — do it now');
+      await sleep(settings.autoHoldMs);
+      if (!run.active) return;
+      await confirmCurrent({ spoken: false });
+      return;
+    }
+
     listen();
   }
 
@@ -319,7 +332,9 @@
     setStatus('ok', 'Checked');
     renderRun();
 
-    if (settings.speakResponse) {
+    // Auto mode always reads the response — reading the checklist to you *is*
+    // the mode, and without it the run is a list of questions with no answers.
+    if (settings.speakResponse || settings.runMode === 'auto') {
       await Speech.speak(item.response, {
         voiceURI: settings.voiceURI,
         rate: settings.rate,
@@ -566,6 +581,24 @@
 
   // ------------------------------------------------------------ settings
 
+  /** "2500 ms" is arithmetic; "2.5 s" is a number you can feel. */
+  function secs(ms) {
+    if (ms < 1000) return ms + ' ms';
+    return (ms / 1000).toFixed(ms % 1000 ? 1 : 0) + ' s';
+  }
+
+  /**
+   * Auto mode ticks items off without you, which is the opposite of how the
+   * rest of the app behaves. Say so plainly rather than let it surprise anyone.
+   */
+  function renderRunModeNote() {
+    const auto = settings.runMode === 'auto';
+    $('#run-mode-note').textContent = auto
+      ? 'Reads the item, waits, reads the response, and checks it off on its own — it does not wait for you. Press Stop to break out.'
+      : 'Reads the item and waits for your voice or tap. Nothing is checked off without you.';
+    $('#field-auto-hold').classList.toggle('muted', !auto);
+  }
+
   function renderSettings() {
     const sel = $('#set-voice');
     const voices = Speech.listVoices();
@@ -588,7 +621,11 @@
     $('#set-threshold').value = settings.threshold;
     $('#thr-val').textContent = Math.round(settings.threshold * 100) + '%';
     $('#set-gap').value = settings.gapMs;
-    $('#gap-val').textContent = settings.gapMs + ' ms';
+    $('#gap-val').textContent = secs(settings.gapMs);
+    $('#set-run-mode').value = settings.runMode;
+    $('#set-auto-hold').value = settings.autoHoldMs;
+    $('#hold-val').textContent = secs(settings.autoHoldMs);
+    renderRunModeNote();
 
     const sttOk = Speech.supported();
     $('#diag').innerHTML = `
@@ -638,7 +675,19 @@
     });
     $('#set-gap').addEventListener('input', (e) => {
       settings.gapMs = parseInt(e.target.value, 10);
-      $('#gap-val').textContent = settings.gapMs + ' ms';
+      $('#gap-val').textContent = secs(settings.gapMs);
+      Store.saveSettings(settings);
+    });
+    $('#set-run-mode').addEventListener('change', (e) => {
+      settings.runMode = e.target.value;
+      Store.saveSettings(settings);
+      renderRunModeNote();
+      // Switching mode mid-run would change the rules under the user's feet.
+      if (run.active) stopLoop();
+    });
+    $('#set-auto-hold').addEventListener('input', (e) => {
+      settings.autoHoldMs = parseInt(e.target.value, 10);
+      $('#hold-val').textContent = secs(settings.autoHoldMs);
       Store.saveSettings(settings);
     });
     $('#btn-test-voice').addEventListener('click', () => {

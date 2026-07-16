@@ -138,6 +138,22 @@
 
       <div class="sep"></div>
 
+      <label class="field">
+        <span>Run mode</span>
+        <select id="set-run-mode">
+          <option value="confirm">Wait for my confirmation</option>
+          <option value="auto">Run automatically</option>
+        </select>
+        <small id="run-mode-note"></small>
+      </label>
+
+      <label class="field" id="field-auto-hold">
+        <span>Pause before the response <b id="hold-val">2.5 s</b>
+          <small>Automatic mode: your window to actually do the item</small>
+        </span>
+        <input type="range" id="set-auto-hold" min="0" max="8000" step="250">
+      </label>
+
       <label class="field row">
         <span>
           Voice confirmation
@@ -166,8 +182,10 @@
         <input type="range" id="set-threshold" min="0.3" max="0.9" step="0.05">
       </label>
       <label class="field">
-        <span>Pause between items <b id="gap-val">400 ms</b></span>
-        <input type="range" id="set-gap" min="0" max="1500" step="50">
+        <span>Pause between items <b id="gap-val">400 ms</b>
+          <small>Silence after one item is done, before the next is called</small>
+        </span>
+        <input type="range" id="set-gap" min="0" max="5000" step="100">
       </label>
 
       <div class="sep"></div>

@@ -414,6 +414,17 @@ input[type="checkbox"] {
 
 .sep { height: 1px; background: var(--line); margin: 24px 0; }
 
+/* A setting that only bites in the other run mode — dimmed, still reachable. */
+.field.muted { opacity: 0.45; }
+
+.field > select + small {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--fg-faint);
+  line-height: 1.4;
+}
+
 /* ---------------------------------------------------------------- editor */
 
 .ed-phase {

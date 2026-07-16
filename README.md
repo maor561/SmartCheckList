@@ -42,6 +42,24 @@ On iPhone: open in **Safari** → Share → **Add to Home Screen**.
    `"check"` / `"roger"` / `"done"`.
 4. It reads the response back and moves on.
 
+### Run modes
+
+**Wait for my confirmation** (default) — as above. Nothing is ever checked off without you.
+
+**Run automatically** — reads the challenge, pauses so you can actually do it, reads the
+response, checks it off, and moves on by itself. This is the one mode that ticks items off
+unattended, which is why it is not the default. The mic stays shut throughout: the app is
+talking almost continuously, so a recognizer opening between callouts would mostly hear the
+app itself. **Stop** breaks out at any point, including mid-pause, and the item is left
+unchecked. Tapping rows still works.
+
+Two delays, both in Settings:
+
+- **Pause before the response** (0–8s, default 2.5s) — automatic mode only. The window
+  between the challenge and the readback. This is your time to move the switch.
+- **Pause between items** (0–5s, default 0.4s) — silence after one item is done, before the
+  next is called. Applies to both modes.
+
 When a checklist finishes it calls out "Checklist complete. Next, BEFORE START", moves
 there, and carries on — so a hands-free run stays hands-free. It still stops at every single
 item and waits for you; it never ticks anything off by itself. If you were tapping rather
