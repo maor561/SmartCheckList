@@ -1,10 +1,17 @@
 # Smart Checklist
 
+**Live: https://smart-checklist-ten.vercel.app**
+
 A voice-driven interactive cockpit checklist. The app calls out an item, waits for you,
 and only advances when **you** confirm — by voice or by tapping. It never advances on its own.
 
 Built as an installable PWA: one codebase runs on the Galaxy Tab Active 2 (Android 9) and
 the iPhone. No app store, no APK, no build toolchain.
+
+## Deploying
+
+Pushes to `main` deploy to production automatically — the repo is connected to the Vercel
+project `smart-checklist`. To deploy without pushing: `vercel --prod --yes`.
 
 ## Running it
 
