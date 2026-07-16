@@ -389,7 +389,12 @@
     else renderRun();
   }
 
-  function finishPhase() {
+  async function finishPhase() {
+    // Whether the crew was running hands-free decides whether we carry the
+    // momentum into the next checklist or just park there ready.
+    const wasRunning = run.active;
+    const finished = currentPhase();
+
     run.active = false;
     Speech.stopListening();
     $('#btn-start').textContent = 'Start';
@@ -397,11 +402,26 @@
     renderHome();
     renderRun();
     setStatus('ok', 'Checklist complete');
-    Speech.speak('Checklist complete', {
-      voiceURI: settings.voiceURI,
-      rate: settings.rate,
-      pitch: settings.pitch,
-    });
+
+    const next = nextPhase();
+    const voice = { voiceURI: settings.voiceURI, rate: settings.rate, pitch: settings.pitch };
+
+    if (!next || !settings.autoNextPhase) {
+      await Speech.speak('Checklist complete', voice);
+      return;
+    }
+
+    await Speech.speak(`Checklist complete. Next, ${next.name}`, voice);
+
+    // The announcement takes a second or two, and it is a hands-free moment —
+    // the user may well have hit back or tapped another phase during it. Only
+    // move if they are still sitting where we left them.
+    if ($('#view-run').hidden) return;
+    if (!finished || run.phaseId !== finished.id) return;
+    if (run.active) return;
+
+    openPhase(next.id);
+    if (wasRunning) startLoop();
   }
 
   // ------------------------------------------------------------ recognition wiring
@@ -564,6 +584,7 @@
     $('#pitch-val').textContent = Number(settings.pitch).toFixed(2);
     $('#set-voice-input').checked = settings.voiceInput;
     $('#set-speak-response').checked = settings.speakResponse;
+    $('#set-auto-next').checked = settings.autoNextPhase;
     $('#set-threshold').value = settings.threshold;
     $('#thr-val').textContent = Math.round(settings.threshold * 100) + '%';
     $('#set-gap').value = settings.gapMs;
@@ -604,6 +625,10 @@
     });
     $('#set-speak-response').addEventListener('change', (e) => {
       settings.speakResponse = e.target.checked;
+      Store.saveSettings(settings);
+    });
+    $('#set-auto-next').addEventListener('change', (e) => {
+      settings.autoNextPhase = e.target.checked;
       Store.saveSettings(settings);
     });
     $('#set-threshold').addEventListener('input', (e) => {

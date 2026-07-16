@@ -14,6 +14,7 @@ const Store = (() => {
     pitch: 1,
     voiceInput: true,
     speakResponse: true, // read the expected response back after you confirm
+    autoNextPhase: true, // roll straight into the next checklist when one ends
     threshold: 0.5,
     gapMs: 400, // silence between confirming an item and calling the next
   };

@@ -42,6 +42,12 @@ On iPhone: open in **Safari** → Share → **Add to Home Screen**.
    `"check"` / `"roger"` / `"done"`.
 4. It reads the response back and moves on.
 
+When a checklist finishes it calls out "Checklist complete. Next, BEFORE START", moves
+there, and carries on — so a hands-free run stays hands-free. It still stops at every single
+item and waits for you; it never ticks anything off by itself. If you were tapping rather
+than running, it opens the next checklist and parks there ready instead. Say `hold` or turn
+off **Continue to the next checklist** in Settings to stop after each one.
+
 Voice commands available at any point: `say again`, `skip`, `back`, `hold`.
 
 **If voice isn't getting through, tap the item.** Tapping always works and always wins —
@@ -130,6 +136,11 @@ Three things the matcher does that are worth knowing (`js/match.js`):
   all of them.
 
 Saying **"check"** confirms any item, whatever its response.
+
+Checklists are written for the eye, so `js/speech.js` rewrites the shorthand before it
+reaches the synthesizer: `TA/RA` and `OFF > NAV` become pauses rather than "slash" and
+"greater than", `100%` becomes "100 percent", `&` becomes "and", and `___` is dropped. This
+only affects speech — matching has its own normaliser and never sees it.
 
 **The mic is closed whenever the app is speaking.** The tablet speaker feeds straight into
 the tablet mic, so a live recognizer would transcribe the app's own callout and check the

@@ -22,11 +22,24 @@ const Speech = (() => {
     lang: 'en-US',
   };
 
-  /** Strip ___ placeholders and punctuation so they are not read aloud. */
+  /**
+   * Turn checklist shorthand into something a synthesizer says sensibly.
+   * Real cards are written for the eye — "TA/RA", "OFF > NAV", "TESTED 100%",
+   * "CLIMB-OUT — Passing TA" — and engines read those as "slash", "greater
+   * than", "percent sign" or a stumble. Speech only; matching never sees this.
+   */
   function speakable(text) {
     return String(text)
-      .replace(/_+/g, ' ')
+      .replace(/_+/g, ' ') // ___ marks a per-flight value; don't read it
+      .replace(/%/g, ' percent ')
+      .replace(/&/g, ' and ')
+      .replace(/[—–]/g, ', ') // em/en dash: a pause, not the word "dash"
+      .replace(/\s*>\s*/g, ', ') // "OFF > NAV" is a sequence
+      .replace(/\s*\/\s*/g, ', ') // "TA/RA", "AUTO / HIGH"
+      .replace(/\s*,\s*(?=,)/g, '') // collapse the commas that produces
+      .replace(/\s+,/g, ',') // no floating space before a comma
       .replace(/\s+/g, ' ')
+      .replace(/^[\s,]+|[\s,]+$/g, '')
       .trim();
   }
 
