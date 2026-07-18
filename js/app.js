@@ -22,6 +22,10 @@
     misses: 0, // consecutive unrecognized responses on this item
   };
 
+  // True while a recognition result is being acted on (speaking + advancing).
+  // Blocks re-entrant results — see Speech.onResult.
+  let handlingResult = false;
+
   // ------------------------------------------------------------ helpers
 
   const $ = (sel) => document.querySelector(sel);
@@ -256,6 +260,7 @@
     }
 
     run.active = true;
+    handlingResult = false;
     $('#btn-start').textContent = 'Stop';
     $('#btn-start').classList.remove('primary');
     await callOutCurrent();
@@ -263,6 +268,7 @@
 
   function stopLoop() {
     run.active = false;
+    handlingResult = false;
     Speech.stopListening();
     Speech.cancelSpeech();
     $('#btn-start').textContent = 'Start';
@@ -453,32 +459,36 @@
   // ------------------------------------------------------------ recognition wiring
 
   Speech.onResult = (alternatives) => {
-    if (!run.active) return;
+    if (!run.active || handlingResult) return;
     const item = currentItem();
     if (!item) return;
 
     const r = Match.classifyAll(alternatives, item.response, { threshold: settings.threshold });
     setHeard(r.transcript);
 
-    switch (r.type) {
-      case 'confirm':
-        confirmCurrent({ spoken: true });
-        break;
-      case 'skip':
-        skipCurrent();
-        break;
-      case 'back':
-        goBack();
-        break;
-      case 'repeat':
-        callOutCurrent();
-        break;
-      case 'hold':
-        stopLoop();
-        break;
-      default:
-        sayAgain(r.transcript);
-    }
+    const action =
+      {
+        confirm: () => confirmCurrent({ spoken: true }),
+        skip: () => skipCurrent(),
+        back: () => goBack(),
+        repeat: () => callOutCurrent(),
+        hold: () => stopLoop(),
+      }[r.type] || (() => sayAgain(r.transcript));
+
+    // The action plays audio and advances asynchronously — there is a real gap
+    // (awaiting the clip out of IndexedDB) before the speaking gate closes the
+    // mic. A second result landing in that gap, whether the recognizer bursting
+    // duplicates or the tablet speaker echoing our own callout, would fire a
+    // second confirm: two clips overlapping and the cursor skipping an item.
+    // Hold all further input until this action settles and the mic is open on
+    // the next item.
+    handlingResult = true;
+    Promise.resolve()
+      .then(action)
+      .catch(() => {})
+      .finally(() => {
+        handlingResult = false;
+      });
   };
 
   Speech.onStateChange = (s) => {

@@ -297,6 +297,9 @@ const Speech = (() => {
     set onResult(fn) {
       state.onResult = fn;
     },
+    get onResult() {
+      return state.onResult;
+    },
     set onStateChange(fn) {
       state.onStateChange = fn;
     },
