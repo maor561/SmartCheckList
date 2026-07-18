@@ -325,6 +325,9 @@ const Speech = (() => {
     get isSpeaking() {
       return state.speaking;
     },
+    set isSpeaking(v) {
+      state.speaking = v;
+    },
     get isListening() {
       return state.recognizing;
     },

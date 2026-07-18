@@ -283,12 +283,17 @@
    */
   async function voice(item, field) {
     const blob = await AudioStore.get(AudioStore.key(item.id, field));
-    if (blob) return Speech.playClip(blob, { rate: settings.rate });
-    return Speech.speak(field === 'challenge' ? item.challenge : item.response, {
-      voiceURI: settings.voiceURI,
-      rate: settings.rate,
-      pitch: settings.pitch,
-    });
+    try {
+      if (blob) return await Speech.playClip(blob, { rate: settings.rate });
+      return await Speech.speak(field === 'challenge' ? item.challenge : item.response, {
+        voiceURI: settings.voiceURI,
+        rate: settings.rate,
+        pitch: settings.pitch,
+      });
+    } finally {
+      // Safari iOS can leave isSpeaking stuck. Force cleanup.
+      Speech.isSpeaking = false;
+    }
   }
 
   /** Speak the challenge, then open the mic. Never both at once. */
