@@ -23,6 +23,75 @@ const Speech = (() => {
     lang: 'en-US',
   };
 
+  // The <audio> element unlock() blesses on a real tap, then every playClip()
+  // reuses for the rest of the run — see unlock()'s comment for why.
+  let unlockedAudio = null;
+
+  // WebKit has a long-standing bug where speechSynthesis silently stalls a
+  // queued utterance after ~15s idle. Nudging it is a harmless no-op when
+  // nothing is speaking, so just run it unconditionally.
+  setInterval(() => {
+    if (window.speechSynthesis && window.speechSynthesis.speaking) {
+      window.speechSynthesis.pause();
+      window.speechSynthesis.resume();
+    }
+  }, 5000);
+
+  function silentWavUrl() {
+    const rate = 8000;
+    const n = Math.floor(rate * 0.05); // 50ms — enough to count as playback, inaudible
+    const buf = new ArrayBuffer(44 + n * 2);
+    const dv = new DataView(buf);
+    const wr = (o, s) => {
+      for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i));
+    };
+    wr(0, 'RIFF');
+    dv.setUint32(4, 36 + n * 2, true);
+    wr(8, 'WAVE');
+    wr(12, 'fmt ');
+    dv.setUint32(16, 16, true);
+    dv.setUint16(20, 1, true);
+    dv.setUint16(22, 1, true);
+    dv.setUint32(24, rate, true);
+    dv.setUint32(28, rate * 2, true);
+    dv.setUint16(32, 2, true);
+    dv.setUint16(34, 16, true);
+    wr(36, 'data');
+    dv.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
+  /**
+   * iOS Safari only allows audio/speech to start inside the call stack of a
+   * real user gesture. A checklist run fires every callout after the first
+   * from inside async chains — sleeps, IndexedDB reads — several ticks
+   * removed from any tap, so iOS silently drops them while Chrome (Android)
+   * does not enforce this as strictly. Call this synchronously from the tap
+   * handler that starts a run, before any `await`: it plays a silent clip on
+   * a real element and speaks a silent utterance, both inside the gesture.
+   * playClip() then reuses that same element all the way through the run —
+   * iOS ties the unlock to the element instance, not the page.
+   */
+  function unlock() {
+    if (!unlockedAudio) unlockedAudio = new Audio();
+    try {
+      unlockedAudio.src = silentWavUrl();
+      const p = unlockedAudio.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch (_) {
+      /* best effort */
+    }
+    if (window.speechSynthesis) {
+      try {
+        const u = new SpeechSynthesisUtterance(' ');
+        u.volume = 0;
+        window.speechSynthesis.speak(u);
+      } catch (_) {
+        /* best effort */
+      }
+    }
+  }
+
   /**
    * Turn checklist shorthand into something a synthesizer says sensibly.
    * Real cards are written for the eye — "TA/RA", "OFF > NAV", "TESTED 100%",
@@ -149,7 +218,15 @@ const Speech = (() => {
       }
 
       const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
+      // Reuse the element unlock() blessed on the Start tap. iOS Safari ties
+      // its gesture-linked play() permission to the element instance, not the
+      // page — a fresh `new Audio()` built later, deep in an async chain with
+      // no tap behind it, gets silently blocked. This is why only the very
+      // first item was ever audible: it was the only clip close enough to a
+      // real tap.
+      const audio = unlockedAudio || new Audio();
+      unlockedAudio = audio;
+      audio.src = url;
       audio.playbackRate = opts.rate || 1;
       state.clip = audio;
 
@@ -301,6 +378,7 @@ const Speech = (() => {
     supported,
     speak,
     playClip,
+    unlock,
     cancelSpeech,
     startListening,
     stopListening,

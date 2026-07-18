@@ -784,7 +784,7 @@
     const sttOk = Speech.supported();
     const canRecord = !!(navigator.mediaDevices && window.MediaRecorder);
     $('#diag').innerHTML = `
-      <p><b>Build:</b> v5.3 (Safari iOS isSpeaking fix)</p>
+      <p><b>Build:</b> v5.4 (Safari iOS audio-unlock)</p>
       <p><b>Speech recognition:</b> ${sttOk ? 'available' : 'NOT available in this browser'}</p>
       <p><b>Voices found:</b> ${voices.length}</p>
       <p><b>Recording:</b> ${canRecord ? 'supported' : 'NOT supported in this browser'}</p>
@@ -958,13 +958,18 @@
     });
 
     $('#btn-start').addEventListener('click', () => {
+      // Must run synchronously inside the tap, before any await — this is
+      // what iOS Safari's audio-unlock gesture requirement demands.
+      Speech.unlock();
       if (run.active) stopLoop();
       else startLoop();
     });
     $('#btn-confirm').addEventListener('click', () => {
+      Speech.unlock();
       if (currentItem()) confirmCurrent({ spoken: false });
     });
     $('#btn-repeat').addEventListener('click', () => {
+      Speech.unlock();
       if (run.active) callOutCurrent();
       else if (currentItem()) {
         Speech.speak(currentItem().challenge, {
