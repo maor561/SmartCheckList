@@ -121,6 +121,13 @@ Settings shows **Recordings stored — N in use**, and flags any that are *orpha
 under an item id that no longer exists, which makes them invisible to the run. That is the
 first thing to check if a recording seems to have vanished.
 
+Some mics record noticeably quieter than others — the same recording flow on an iPhone and
+on a Samsung tablet came out at very different volumes. **Recording volume boost** in
+Settings (default 1×, off) applies a Web Audio gain stage on top of whatever was recorded,
+so a quiet device can be turned up without re-recording anything. It's a device setting, not
+a profile setting — it doesn't travel with the export and won't affect a device that already
+sounds right.
+
 ## Editing checklists
 
 **Edit** opens the editor: rename phases, reorder them, add/remove phases, add/remove/edit

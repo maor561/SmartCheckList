@@ -277,6 +277,12 @@
     setHeard('');
   }
 
+  /** Bless the audio pipeline on a real tap and apply the user's volume boost. */
+  function unlockAudio() {
+    Speech.unlock();
+    Speech.setClipGain(settings.recGain);
+  }
+
   /**
    * Voice one field of an item: play its recording if one exists, otherwise
    * speak the text. Same gate either way — the mic is shut while it sounds.
@@ -776,6 +782,8 @@
     $('#thr-val').textContent = Math.round(settings.threshold * 100) + '%';
     $('#set-gap').value = settings.gapMs;
     $('#gap-val').textContent = secs(settings.gapMs);
+    $('#set-recgain').value = settings.recGain;
+    $('#recgain-val').textContent = Number(settings.recGain).toFixed(2) + '×';
     $('#set-run-mode').value = settings.runMode;
     $('#set-auto-hold').value = settings.autoHoldMs;
     $('#hold-val').textContent = secs(settings.autoHoldMs);
@@ -784,7 +792,7 @@
     const sttOk = Speech.supported();
     const canRecord = !!(navigator.mediaDevices && window.MediaRecorder);
     $('#diag').innerHTML = `
-      <p><b>Build:</b> v5.4 (Safari iOS audio-unlock)</p>
+      <p><b>Build:</b> v5.5 (recording volume boost)</p>
       <p><b>Speech recognition:</b> ${sttOk ? 'available' : 'NOT available in this browser'}</p>
       <p><b>Voices found:</b> ${voices.length}</p>
       <p><b>Recording:</b> ${canRecord ? 'supported' : 'NOT supported in this browser'}</p>
@@ -868,6 +876,12 @@
       settings.gapMs = parseInt(e.target.value, 10);
       $('#gap-val').textContent = secs(settings.gapMs);
       Store.saveSettings(settings);
+    });
+    $('#set-recgain').addEventListener('input', (e) => {
+      settings.recGain = parseFloat(e.target.value);
+      $('#recgain-val').textContent = settings.recGain.toFixed(2) + '×';
+      Store.saveSettings(settings);
+      Speech.setClipGain(settings.recGain);
     });
     $('#set-run-mode').addEventListener('change', (e) => {
       settings.runMode = e.target.value;
@@ -960,16 +974,16 @@
     $('#btn-start').addEventListener('click', () => {
       // Must run synchronously inside the tap, before any await — this is
       // what iOS Safari's audio-unlock gesture requirement demands.
-      Speech.unlock();
+      unlockAudio();
       if (run.active) stopLoop();
       else startLoop();
     });
     $('#btn-confirm').addEventListener('click', () => {
-      Speech.unlock();
+      unlockAudio();
       if (currentItem()) confirmCurrent({ spoken: false });
     });
     $('#btn-repeat').addEventListener('click', () => {
-      Speech.unlock();
+      unlockAudio();
       if (run.active) callOutCurrent();
       else if (currentItem()) {
         Speech.speak(currentItem().challenge, {

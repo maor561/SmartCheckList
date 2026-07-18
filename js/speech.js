@@ -27,6 +27,16 @@ const Speech = (() => {
   // reuses for the rest of the run — see unlock()'s comment for why.
   let unlockedAudio = null;
 
+  // Some mics (observed on a Samsung tablet) record noticeably quieter than
+  // others (an iPhone recording the exact same way sounded fine). A clip's
+  // volume is baked into the file at record time — .volume on the element
+  // can only go up to "as loud as it was recorded", not past it — so boosting
+  // played-back level needs a real gain stage. Built once in unlock(), reused
+  // for every clip since createMediaElementSource can only wrap an element once.
+  let gainCtx = null;
+  let gainNode = null;
+  let gainWired = null;
+
   // WebKit has a long-standing bug where speechSynthesis silently stalls a
   // queued utterance after ~15s idle. Nudging it is a harmless no-op when
   // nothing is speaking, so just run it unconditionally.
@@ -90,6 +100,28 @@ const Speech = (() => {
         /* best effort */
       }
     }
+    // Wire the gain stage once, on the same element: an AudioContext also
+    // needs a gesture to start on iOS, and createMediaElementSource can only
+    // wrap a given <audio> element a single time.
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx && gainWired !== unlockedAudio) {
+        gainCtx = gainCtx || new Ctx();
+        const source = gainCtx.createMediaElementSource(unlockedAudio);
+        gainNode = gainCtx.createGain();
+        source.connect(gainNode);
+        gainNode.connect(gainCtx.destination);
+        gainWired = unlockedAudio;
+      }
+      if (gainCtx && gainCtx.state === 'suspended') gainCtx.resume();
+    } catch (_) {
+      /* Web Audio unavailable — clips still play at their recorded volume */
+    }
+  }
+
+  /** Playback volume multiplier for recorded clips — 1 leaves them untouched. */
+  function setClipGain(v) {
+    if (gainNode) gainNode.gain.value = v;
   }
 
   /**
@@ -379,6 +411,7 @@ const Speech = (() => {
     speak,
     playClip,
     unlock,
+    setClipGain,
     cancelSpeech,
     startListening,
     stopListening,

@@ -19,6 +19,7 @@ const Store = (() => {
     autoHoldMs: 2500, // auto mode: your window to do the item before the readback
     threshold: 0.5,
     gapMs: 400, // silence between confirming an item and calling the next
+    recGain: 1, // playback volume boost for recorded clips — some mics record quiet
   };
 
   function uid() {
