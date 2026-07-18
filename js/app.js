@@ -271,6 +271,20 @@
     setHeard('');
   }
 
+  /**
+   * Voice one field of an item: play its recording if one exists, otherwise
+   * speak the text. Same gate either way — the mic is shut while it sounds.
+   */
+  async function voice(item, field) {
+    const blob = await AudioStore.get(AudioStore.key(item.id, field));
+    if (blob) return Speech.playClip(blob, { rate: settings.rate });
+    return Speech.speak(field === 'challenge' ? item.challenge : item.response, {
+      voiceURI: settings.voiceURI,
+      rate: settings.rate,
+      pitch: settings.pitch,
+    });
+  }
+
   /** Speak the challenge, then open the mic. Never both at once. */
   async function callOutCurrent() {
     const item = currentItem();
@@ -286,11 +300,7 @@
     Speech.stopListening(); // hard gate: mic closed before we make any sound
     setStatus('speaking', item.challenge);
 
-    await Speech.speak(item.challenge, {
-      voiceURI: settings.voiceURI,
-      rate: settings.rate,
-      pitch: settings.pitch,
-    });
+    await voice(item, 'challenge');
 
     if (!run.active) return;
 
@@ -335,11 +345,7 @@
     // Auto mode always reads the response — reading the checklist to you *is*
     // the mode, and without it the run is a list of questions with no answers.
     if (settings.speakResponse || settings.runMode === 'auto') {
-      await Speech.speak(item.response, {
-        voiceURI: settings.voiceURI,
-        rate: settings.rate,
-        pitch: settings.pitch,
-      });
+      await voice(item, 'response');
     }
 
     run.index += 1;
@@ -367,12 +373,17 @@
     setStatus('miss', run.misses >= 2 ? 'Not getting that — tap the item' : 'Say again');
 
     Speech.stopListening();
-    const phrase = run.misses >= 2 ? currentItem().challenge : 'Say again';
-    await Speech.speak(phrase, {
-      voiceURI: settings.voiceURI,
-      rate: settings.rate,
-      pitch: settings.pitch,
-    });
+    // On the second miss re-play the item's own challenge (recording or TTS);
+    // the bare "Say again" prompt stays synthesized.
+    if (run.misses >= 2) {
+      await voice(currentItem(), 'challenge');
+    } else {
+      await Speech.speak('Say again', {
+        voiceURI: settings.voiceURI,
+        rate: settings.rate,
+        pitch: settings.pitch,
+      });
+    }
     if (!run.active) return;
     listen();
   }
@@ -482,6 +493,104 @@
 
   // ------------------------------------------------------------ editor
 
+  // Only one clip records at a time; starting a new one stops whoever's live.
+  let stopActiveRec = null;
+
+  /** Codec the MediaRecorder can produce here — differs Android vs iOS. */
+  function recorderMime() {
+    const cands = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+    return (window.MediaRecorder && cands.find((m) => MediaRecorder.isTypeSupported(m))) || '';
+  }
+
+  /**
+   * A self-contained record/play/clear control for one clip key. Cycles through
+   * three states — empty (record), recording (stop + timer), recorded (play +
+   * clear) — repainting itself as it goes. Audio lives in IndexedDB, so none of
+   * this touches the profile JSON or calls persist().
+   */
+  function makeRecorder(key) {
+    const ctl = document.createElement('div');
+    ctl.className = 'rec-ctl';
+    let recorder = null;
+    let chunks = [];
+    let secs = 0;
+    let ticker = null;
+
+    async function paint() {
+      if (recorder) {
+        ctl.innerHTML = `<button type="button" class="rec on" title="Stop">■ ${secs}s</button>`;
+        ctl.firstChild.onclick = stop;
+        return;
+      }
+      const has = await AudioStore.has(key);
+      ctl.innerHTML = has
+        ? '<button type="button" class="rec has" title="Play recording">▶</button>' +
+          '<button type="button" class="rec clr" title="Delete recording">✕</button>'
+        : '<button type="button" class="rec" title="Record">●</button>';
+      if (has) {
+        ctl.querySelector('.has').onclick = play;
+        ctl.querySelector('.clr').onclick = clear;
+      } else {
+        ctl.firstChild.onclick = start;
+      }
+    }
+
+    async function start() {
+      if (stopActiveRec) stopActiveRec(); // save whatever else was recording
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        toast('Microphone unavailable' + (e && e.name ? ` (${e.name})` : ''));
+        return;
+      }
+      const mime = recorderMime();
+      try {
+        recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      } catch (_) {
+        recorder = new MediaRecorder(stream);
+      }
+      chunks = [];
+      recorder.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        clearInterval(ticker);
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        recorder = null;
+        stopActiveRec = null;
+        if (blob.size) await AudioStore.put(key, blob);
+        paint();
+      };
+      recorder.start();
+      stopActiveRec = stop;
+      secs = 0;
+      ticker = setInterval(() => {
+        secs += 1;
+        paint();
+        if (secs >= 20) stop(); // a callout is a few seconds; cap runaways
+      }, 1000);
+      paint();
+    }
+
+    function stop() {
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+    }
+
+    async function play() {
+      const blob = await AudioStore.get(key);
+      if (blob) Speech.playClip(blob, { rate: settings.rate });
+    }
+
+    async function clear() {
+      if (!confirm('Delete this recording?')) return;
+      await AudioStore.del(key);
+      paint();
+    }
+
+    paint();
+    return ctl;
+  }
+
   function renderEditor() {
     renderProfileOptions($('#edit-profile-select'));
     $('#edit-name').value = checklistOf().name || '';
@@ -517,8 +626,8 @@
         const row = document.createElement('div');
         row.className = 'ed-item';
         row.innerHTML = `
-          <input class="ed-ch" type="text" placeholder="Challenge">
-          <input class="ed-rp" type="text" placeholder="Response">
+          <div class="ed-field ed-field-ch"><input class="ed-ch" type="text" placeholder="Challenge"></div>
+          <div class="ed-field ed-field-rp"><input class="ed-rp" type="text" placeholder="Response"></div>
           <button class="btn ghost icon danger" data-act="del-item">✕</button>
         `;
         const ch = row.querySelector('.ed-ch');
@@ -533,7 +642,10 @@
           item.response = rp.value;
           persist();
         });
+        row.querySelector('.ed-field-ch').appendChild(makeRecorder(AudioStore.key(item.id, 'challenge')));
+        row.querySelector('.ed-field-rp').appendChild(makeRecorder(AudioStore.key(item.id, 'response')));
         row.querySelector('[data-act="del-item"]').addEventListener('click', () => {
+          AudioStore.delItem(item.id);
           phase.items.splice(ii, 1);
           persist();
           renderEditor();
@@ -549,6 +661,7 @@
 
       box.querySelector('[data-act="del-phase"]').addEventListener('click', () => {
         if (!confirm(`Delete the "${phase.name}" phase and all its items?`)) return;
+        phase.items.forEach((it) => AudioStore.delItem(it.id));
         checklistOf().phases.splice(pi, 1);
         persist();
         renderEditor();
@@ -871,7 +984,12 @@
       if (profiles.length <= 1) return;
       const p = checklistOf();
       if (!confirm(`Delete the profile "${p.name}" and all its phases?`)) return;
-      p.phases.forEach((ph) => ph.items.forEach((it) => delete progress[it.id]));
+      p.phases.forEach((ph) =>
+        ph.items.forEach((it) => {
+          delete progress[it.id];
+          AudioStore.delItem(it.id);
+        })
+      );
       saveProgress();
       profiles = profiles.filter((x) => x.id !== p.id);
       activeId = profiles[0].id;

@@ -132,6 +132,26 @@ item and **never spoken** — "GSX" read aloud mid-callout is noise.
 The bundled 737 checklist is a generic condensed NG flow — a starting point. Replace it
 with your real one via Import, or edit it in place.
 
+### Recording your own voice
+
+Every item in the editor has a **●** record button beside both the challenge and the
+response. Tap to record (tap again to stop), and from then on that clip plays **instead of
+the synthesized voice** for that field — challenge and response are independent. A recorded
+field shows **▶** to play it back and **✕** to delete it and fall back to text-to-speech.
+Recordings play at your configured speed and honour the same rule as TTS: the mic is shut
+while a clip plays, so a recording of "gear up" can't check its own item off.
+
+Recordings are stored on the device (in IndexedDB, not localStorage — audio is too big for
+it), keyed to the item. That means **they do not travel in the JSON export** and are not
+copied when you duplicate a profile — record on the tablet you actually fly with. Deleting
+an item, phase, or profile deletes its recordings too.
+
+## Reading the run screen
+
+Items you haven't done yet are **bright white**; once checked they go **grey** with a green
+tick. The eye lands on what's left, not on what's finished. The current item is boxed in
+blue and enlarged.
+
 ## How the voice side works
 
 **It is not open dictation.** At any moment the app expects one of a small known set of
@@ -190,8 +210,9 @@ data/*.csv               source checklists (the truth for generated profiles)
 js/profile-pmdg737.js    GENERATED from data/pmdg-737-maor-v2.csv — do not hand-edit
 js/data.js               the generic 737 checklist + the shipped profile list
 js/store.js              localStorage persistence, profiles, legacy migration
+js/audio.js              per-item voice recordings (IndexedDB blob store)
 js/match.js              closed-set voice matching — the noise-rejection logic
-js/speech.js             TTS/STT wrapper; enforces "never both at once"
+js/speech.js             TTS/STT + recorded-clip playback; enforces "never both at once"
 js/app.js                run state machine, editor, settings
 sw.js                    offline app shell
 scripts/make-icons.js    regenerates icons/

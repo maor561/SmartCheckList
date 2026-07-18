@@ -223,7 +223,7 @@ html, body {
   flex: 0 0 auto;
   max-width: 100%;
   margin-left: auto;
-  color: var(--fg-dim);
+  color: var(--fg);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -239,9 +239,11 @@ html, body {
   opacity: 0.85;
 }
 
-.item.pending { opacity: 0.5; }
-.item.checked { opacity: 0.55; }
-.item.checked .challenge, .item.checked .response { color: var(--fg-dim); }
+/* What's left to do reads bright white; what's done recedes to grey. The eye
+   lands on the remaining items, not the finished ones. */
+.item.checked .challenge,
+.item.checked .response { color: var(--fg-dim); }
+.item.checked .dots { border-bottom-color: var(--line); }
 
 .item.current {
   background: var(--bg-2);
@@ -442,8 +444,36 @@ input[type="checkbox"] {
 .ed-items { display: grid; gap: 8px; margin-bottom: 10px; }
 
 .ed-item { display: flex; gap: 8px; align-items: center; }
-.ed-item .ed-ch { flex: 1.2; }
-.ed-item .ed-rp { flex: 1; }
+.ed-field { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.ed-field-ch { flex: 1.2; }
+.ed-field-rp { flex: 1; }
+.ed-field > input { flex: 1 1 auto; min-width: 0; }
+
+/* Record / play / clear control that sits beside each input. */
+.rec-ctl { display: flex; gap: 4px; flex: none; }
+.rec {
+  flex: none;
+  width: 44px;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.rec:hover { border-color: var(--fg-dim); }
+.rec.on { width: auto; padding: 0 12px; color: #fff; background: var(--red); border-color: var(--red); }
+.rec.has { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, var(--line)); }
+.rec.clr { width: 34px; color: var(--fg-faint); font-size: 13px; }
+.rec.clr:hover { color: var(--red); border-color: var(--red); }
 
 /* Side by side, these two inputs squeeze to ~150px on a phone and you end up
    editing text you cannot read. Below this width the challenge takes its own
@@ -467,10 +497,10 @@ input[type="checkbox"] {
   }
 
   .ed-item:last-child { border-bottom: none; padding-bottom: 0; }
-  .ed-item .ed-ch { flex: 1 1 100%; }
-  /* basis 0, not auto — with an auto basis the input is sized to its content and
+  .ed-item .ed-field-ch { flex: 1 1 100%; }
+  /* basis 0, not auto — with an auto basis the field is sized to its content and
      shoves the delete button onto a third line. */
-  .ed-item .ed-rp { flex: 1 1 0; min-width: 0; }
+  .ed-item .ed-field-rp { flex: 1 1 0; }
 }
 
 .profile-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }

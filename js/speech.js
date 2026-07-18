@@ -17,6 +17,7 @@ const Speech = (() => {
     recognizing: false,
     wantListening: false,
     speaking: false,
+    clip: null, // the currently-playing recorded clip, if any
     onResult: null,
     onStateChange: null,
     lang: 'en-US',
@@ -116,8 +117,60 @@ const Speech = (() => {
 
   function cancelSpeech() {
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (state.clip) {
+      try {
+        state.clip.pause();
+      } catch (_) {
+        /* nothing playing */
+      }
+      state.clip = null;
+    }
     state.speaking = false;
     emit();
+  }
+
+  /**
+   * Play a recorded clip in place of TTS. Flips the same `speaking` gate `speak`
+   * uses, so the mic stays shut while a recording plays — the tablet speaker
+   * feeds its own mic, and a recording of "gear up" is just as capable of
+   * checking the item off in its own voice as a synthesized callout. Resolves
+   * (never rejects) when playback ends, errors, or a guard fires.
+   */
+  function playClip(blob, opts = {}) {
+    return new Promise((resolve) => {
+      if (!blob) return resolve();
+
+      // Anything queued in the synth is stale the moment a clip takes over.
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.playbackRate = opts.rate || 1;
+      state.clip = audio;
+
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(guard);
+        URL.revokeObjectURL(url);
+        if (state.clip === audio) state.clip = null;
+        state.speaking = false;
+        emit();
+        resolve();
+      };
+
+      audio.onended = done;
+      audio.onerror = done;
+      // A clip that never fires 'ended' (decode failure on an odd codec) must
+      // not hang the run. 90s covers any realistic callout.
+      const guard = setTimeout(done, 90000);
+
+      state.speaking = true;
+      emit();
+      const p = audio.play();
+      if (p && p.catch) p.catch(done);
+    });
   }
 
   // ---------------------------------------------------------------- STT
@@ -231,6 +284,7 @@ const Speech = (() => {
   return {
     supported,
     speak,
+    playClip,
     cancelSpeech,
     startListening,
     stopListening,
