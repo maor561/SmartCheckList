@@ -178,7 +178,14 @@ const Speech = (() => {
       state.speaking = true;
       emit();
       const p = audio.play();
-      if (p && p.catch) p.catch(() => done('play-error'));
+      if (p && p.catch) {
+        // Safari iOS can return a Promise that never settles. Race it with a
+        // timeout so state.speaking doesn't hang forever.
+        Promise.race([
+          p,
+          new Promise((_, rej) => setTimeout(() => rej(new Error('play-timeout')), 5000))
+        ]).catch(() => done('play-error'));
+      }
     });
   }
 
