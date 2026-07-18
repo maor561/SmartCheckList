@@ -774,6 +774,7 @@
     const sttOk = Speech.supported();
     const canRecord = !!(navigator.mediaDevices && window.MediaRecorder);
     $('#diag').innerHTML = `
+      <p><b>Build:</b> v5.1 (one-query optimization)</p>
       <p><b>Speech recognition:</b> ${sttOk ? 'available' : 'NOT available in this browser'}</p>
       <p><b>Voices found:</b> ${voices.length}</p>
       <p><b>Recording:</b> ${canRecord ? 'supported' : 'NOT supported in this browser'}</p>
