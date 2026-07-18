@@ -100,6 +100,27 @@ loose flow items and its formal CHECKLIST are run at different moments. Rows rea
 "... CHECKLIST COMPLETED" are end markers — items after one belong to the procedure's flow
 resuming, and land in a "(continued)" phase. The `item_note` column becomes a note.
 
+## Recording the callouts in your own voice
+
+Each item in the editor has a record control beside the challenge and beside the response:
+**●** record, **■** stop, **▶** play back, **✕** delete. Where a recording exists it is played
+during the run **instead of** the synthesized voice; items without one still fall back to
+TTS, so you can record only the callouts that matter.
+
+Clips are stored as blobs in **IndexedDB** — localStorage would be exhausted by a handful
+of them once base64-encoded. They are keyed by item id, which has two consequences worth
+knowing:
+
+- **They are device-local.** The JSON export carries text only, so recordings do not travel
+  with a profile. Record on the tablet you actually fly with.
+- **They belong to the item, not its text.** Editing an item's wording keeps its recording.
+  Duplicating a profile re-issues item ids, so the copy starts with no recordings, and
+  deleting an item or profile deletes its clips.
+
+Settings shows **Recordings stored — N in use**, and flags any that are *orphaned*: stored
+under an item id that no longer exists, which makes them invisible to the run. That is the
+first thing to check if a recording seems to have vanished.
+
 ## Editing checklists
 
 **Edit** opens the editor: rename phases, reorder them, add/remove phases, add/remove/edit

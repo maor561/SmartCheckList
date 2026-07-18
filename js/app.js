@@ -518,7 +518,7 @@
    * clear) — repainting itself as it goes. Audio lives in IndexedDB, so none of
    * this touches the profile JSON or calls persist().
    */
-  function makeRecorder(key) {
+  function makeRecorder(key, known) {
     const ctl = document.createElement('div');
     ctl.className = 'rec-ctl';
     let recorder = null;
@@ -526,13 +526,15 @@
     let secs = 0;
     let ticker = null;
 
-    async function paint() {
+    // Synchronous: `known` is the set of stored keys fetched once per render,
+    // so painting 468 controls costs one query instead of 468.
+    function paint() {
       if (recorder) {
         ctl.innerHTML = `<button type="button" class="rec on" title="Stop">■ ${secs}s</button>`;
         ctl.firstChild.onclick = stop;
         return;
       }
-      const has = await AudioStore.has(key);
+      const has = known.has(key);
       ctl.innerHTML = has
         ? '<button type="button" class="rec has" title="Play recording">▶</button>' +
           '<button type="button" class="rec clr" title="Delete recording">✕</button>'
@@ -568,7 +570,15 @@
         const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
         recorder = null;
         stopActiveRec = null;
-        if (blob.size) await AudioStore.put(key, blob);
+        if (blob.size) {
+          try {
+            await AudioStore.put(key, blob);
+            known.add(key);
+          } catch (e) {
+            // Never let a failed save look like a successful one.
+            toast('Could not save the recording — storage error');
+          }
+        }
         paint();
       };
       recorder.start();
@@ -588,12 +598,21 @@
 
     async function play() {
       const blob = await AudioStore.get(key);
-      if (blob) Speech.playClip(blob, { rate: settings.rate });
+      if (!blob) {
+        // The control said there was a recording and the read disagreed — say
+        // so rather than doing nothing and looking broken.
+        toast('Recording could not be read back');
+        known.delete(key);
+        paint();
+        return;
+      }
+      Speech.playClip(blob, { rate: settings.rate });
     }
 
     async function clear() {
       if (!confirm('Delete this recording?')) return;
       await AudioStore.del(key);
+      known.delete(key);
       paint();
     }
 
@@ -601,7 +620,9 @@
     return ctl;
   }
 
-  function renderEditor() {
+  async function renderEditor() {
+    // One query for every stored clip, shared by all the recorder controls.
+    const known = await AudioStore.allKeys();
     renderProfileOptions($('#edit-profile-select'));
     $('#edit-name').value = checklistOf().name || '';
     $('#btn-delete-profile').disabled = profiles.length <= 1;
@@ -652,8 +673,8 @@
           item.response = rp.value;
           persist();
         });
-        row.querySelector('.ed-field-ch').appendChild(makeRecorder(AudioStore.key(item.id, 'challenge')));
-        row.querySelector('.ed-field-rp').appendChild(makeRecorder(AudioStore.key(item.id, 'response')));
+        row.querySelector('.ed-field-ch').appendChild(makeRecorder(AudioStore.key(item.id, 'challenge'), known));
+        row.querySelector('.ed-field-rp').appendChild(makeRecorder(AudioStore.key(item.id, 'response'), known));
         row.querySelector('[data-act="del-item"]').addEventListener('click', () => {
           AudioStore.delItem(item.id);
           phase.items.splice(ii, 1);
@@ -751,9 +772,12 @@
     renderRunModeNote();
 
     const sttOk = Speech.supported();
+    const canRecord = !!(navigator.mediaDevices && window.MediaRecorder);
     $('#diag').innerHTML = `
       <p><b>Speech recognition:</b> ${sttOk ? 'available' : 'NOT available in this browser'}</p>
       <p><b>Voices found:</b> ${voices.length}</p>
+      <p><b>Recording:</b> ${canRecord ? 'supported' : 'NOT supported in this browser'}</p>
+      <p id="diag-clips"><b>Recordings stored:</b> counting…</p>
       <p class="hint">${
         sttOk
           ? 'Voice recognition needs an internet connection on Android and iOS.'
@@ -761,6 +785,39 @@
       }</p>
     `;
     $('#settings-sub').textContent = sttOk ? 'Voice ready' : 'Tap-only mode';
+    renderClipDiag();
+  }
+
+  /**
+   * Ground truth about what is actually on this device. Recordings are keyed by
+   * item id, so a clip whose id no longer matches any item is invisible to the
+   * run even though it is stored — that is worth showing plainly rather than
+   * leaving it to look like the audio vanished.
+   */
+  async function renderClipDiag() {
+    const el = $('#diag-clips');
+    if (!el) return;
+    const { count, error } = await AudioStore.stats();
+    const keys = await AudioStore.allKeys();
+    const live = new Set();
+    profiles.forEach((p) =>
+      p.phases.forEach((ph) =>
+        ph.items.forEach((it) => {
+          live.add(AudioStore.key(it.id, 'challenge'));
+          live.add(AudioStore.key(it.id, 'response'));
+        })
+      )
+    );
+    let matched = 0;
+    keys.forEach((k) => {
+      if (live.has(k)) matched++;
+    });
+    const orphaned = count - matched;
+    el.innerHTML =
+      `<b>Recordings stored:</b> ${count}` +
+      (count ? ` — ${matched} in use` : '') +
+      (orphaned > 0 ? `, <b style="color:var(--amber)">${orphaned} orphaned</b>` : '') +
+      (error ? `<br><b style="color:var(--red)">Storage error: ${error}</b>` : '');
   }
 
   function bindSettings() {
