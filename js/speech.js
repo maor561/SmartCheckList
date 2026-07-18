@@ -141,7 +141,12 @@ const Speech = (() => {
       if (!blob) return resolve();
 
       // Anything queued in the synth is stale the moment a clip takes over.
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      // Safari iOS has issues with cancel(), so try-catch it.
+      try {
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+      } catch (e) {
+        // Ignore Safari quirks
+      }
 
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
@@ -149,7 +154,7 @@ const Speech = (() => {
       state.clip = audio;
 
       let settled = false;
-      const done = () => {
+      const done = (reason) => {
         if (settled) return;
         settled = true;
         clearTimeout(guard);
@@ -157,19 +162,23 @@ const Speech = (() => {
         if (state.clip === audio) state.clip = null;
         state.speaking = false;
         emit();
+        // Report audio errors to the UI so the user knows what's happening.
+        if (reason === 'error' && state.onPlayClipError) {
+          state.onPlayClipError(audio.error);
+        }
         resolve();
       };
 
-      audio.onended = done;
-      audio.onerror = done;
+      audio.onended = () => done('ended');
+      audio.onerror = () => done('error');
       // A clip that never fires 'ended' (decode failure on an odd codec) must
       // not hang the run. 90s covers any realistic callout.
-      const guard = setTimeout(done, 90000);
+      const guard = setTimeout(() => done('timeout'), 90000);
 
       state.speaking = true;
       emit();
       const p = audio.play();
-      if (p && p.catch) p.catch(done);
+      if (p && p.catch) p.catch(() => done('play-error'));
     });
   }
 
@@ -302,6 +311,9 @@ const Speech = (() => {
     },
     set onStateChange(fn) {
       state.onStateChange = fn;
+    },
+    set onPlayClipError(fn) {
+      state.onPlayClipError = fn;
     },
     get isSpeaking() {
       return state.speaking;

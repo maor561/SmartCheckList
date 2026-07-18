@@ -491,6 +491,11 @@
       });
   };
 
+  Speech.onPlayClipError = (error) => {
+    const msg = error && error.message ? error.message : `Audio error: ${error && error.code || 'unknown'}`;
+    toast(`Recording playback failed: ${msg}`);
+  };
+
   Speech.onStateChange = (s) => {
     if (s.error === 'mic-denied') {
       settings.voiceInput = false;
