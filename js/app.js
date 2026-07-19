@@ -567,7 +567,12 @@
       if (stopActiveRec) stopActiveRec(); // save whatever else was recording
       let stream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Explicit rather than `audio: true` — some Android Chrome builds
+        // have been seen recording noticeably quieter with the plain
+        // shorthand than with autoGainControl asked for outright.
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true },
+        });
       } catch (e) {
         toast('Microphone unavailable' + (e && e.name ? ` (${e.name})` : ''));
         return;
@@ -792,7 +797,7 @@
     const sttOk = Speech.supported();
     const canRecord = !!(navigator.mediaDevices && window.MediaRecorder);
     $('#diag').innerHTML = `
-      <p><b>Build:</b> v5.5 (recording volume boost)</p>
+      <p><b>Build:</b> v5.6 (mic autoGainControl + wider boost + test button)</p>
       <p><b>Speech recognition:</b> ${sttOk ? 'available' : 'NOT available in this browser'}</p>
       <p><b>Voices found:</b> ${voices.length}</p>
       <p><b>Recording:</b> ${canRecord ? 'supported' : 'NOT supported in this browser'}</p>
@@ -882,6 +887,17 @@
       $('#recgain-val').textContent = settings.recGain.toFixed(2) + '×';
       Store.saveSettings(settings);
       Speech.setClipGain(settings.recGain);
+    });
+    $('#btn-test-recgain').addEventListener('click', async () => {
+      unlockAudio(); // the tap itself — builds the gain graph if needed
+      const keys = await AudioStore.allKeys();
+      const first = [...keys][0];
+      if (!first) {
+        toast('No recordings stored yet — record one in the editor first');
+        return;
+      }
+      const blob = await AudioStore.get(first);
+      if (blob) Speech.playClip(blob, { rate: settings.rate });
     });
     $('#set-run-mode').addEventListener('change', (e) => {
       settings.runMode = e.target.value;
