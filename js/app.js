@@ -797,7 +797,7 @@
     const sttOk = Speech.supported();
     const canRecord = !!(navigator.mediaDevices && window.MediaRecorder);
     $('#diag').innerHTML = `
-      <p><b>Build:</b> v5.6 (mic autoGainControl + wider boost + test button)</p>
+      <p><b>Build:</b> v5.7 (export/import recordings)</p>
       <p><b>Speech recognition:</b> ${sttOk ? 'available' : 'NOT available in this browser'}</p>
       <p><b>Voices found:</b> ${voices.length}</p>
       <p><b>Recording:</b> ${canRecord ? 'supported' : 'NOT supported in this browser'}</p>
@@ -962,6 +962,45 @@
     reader.readAsText(file);
   }
 
+  async function exportRecordings() {
+    const clips = await AudioStore.exportAll();
+    if (!clips.length) {
+      toast('No recordings stored on this device yet');
+      return;
+    }
+    const payload = { type: 'smart-checklist-recordings', version: 1, exportedAt: new Date().toISOString(), clips };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `smart-checklist-recordings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast(`Exported ${clips.length} recording${clips.length === 1 ? '' : 's'}`);
+  }
+
+  function importRecordingsFile(file) {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!parsed || parsed.type !== 'smart-checklist-recordings' || !Array.isArray(parsed.clips)) {
+          throw new Error('Not a recordings backup file');
+        }
+        // A restore is a deliberate, occasional action — confirm before it
+        // silently overwrites whatever is already on this device.
+        const ok = confirm(`Import ${parsed.clips.length} recording(s)? This overwrites any that already exist here.`);
+        if (!ok) return;
+        const count = await AudioStore.importAll(parsed.clips);
+        toast(`Restored ${count} recording${count === 1 ? '' : 's'}`);
+        if (!$('#view-edit').hidden) renderEditor();
+        if (!$('#view-settings').hidden) renderClipDiag();
+      } catch (err) {
+        toast('Could not read that file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
   // ------------------------------------------------------------ wiring
 
   function bind() {
@@ -1117,6 +1156,13 @@
     $('#btn-import').addEventListener('click', () => $('#import-file').click());
     $('#import-file').addEventListener('change', (e) => {
       if (e.target.files[0]) importChecklist(e.target.files[0]);
+      e.target.value = '';
+    });
+
+    $('#btn-export-recordings').addEventListener('click', exportRecordings);
+    $('#btn-import-recordings').addEventListener('click', () => $('#import-recordings-file').click());
+    $('#import-recordings-file').addEventListener('change', (e) => {
+      if (e.target.files[0]) importRecordingsFile(e.target.files[0]);
       e.target.value = '';
     });
 

@@ -197,6 +197,17 @@
 
       <div class="sep"></div>
       <div class="diag" id="diag"></div>
+      <div class="profile-actions">
+        <button class="btn sm" id="btn-export-recordings">Export recordings</button>
+        <button class="btn sm" id="btn-import-recordings">Import recordings</button>
+      </div>
+      <p class="hint">
+        Recordings live only on this device. Export them to a file you keep somewhere safe —
+        Drive, email, a computer — so a cleared browser cache or a new device doesn't mean
+        recording everything again. Import restores them onto whichever profile has the same
+        items (the shipped profiles always do; a duplicated profile does not).
+      </p>
+      <input type="file" id="import-recordings-file" accept="application/json,.json" hidden>
     </div>
   </section>
 

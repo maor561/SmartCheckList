@@ -110,5 +110,49 @@ const AudioStore = (() => {
     return Promise.all([del(key(itemId, 'challenge')), del(key(itemId, 'response'))]).catch(() => {});
   }
 
-  return { key, put, get, del, has, delItem, allKeys, stats };
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function base64ToBlob(base64, mimeType) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  /**
+   * Every clip as plain JSON-safe data, for the "Export recordings" backup.
+   * Recordings only ever live in this device's IndexedDB — nothing else backs
+   * them up, and clearing site data (which a browser cache clear can drag
+   * along with it) takes them with it.
+   */
+  async function exportAll() {
+    const keys = [...(await allKeys())];
+    const clips = [];
+    for (const k of keys) {
+      const blob = await get(k);
+      if (!blob) continue;
+      clips.push({ key: k, mimeType: blob.type || 'audio/webm', data: await blobToBase64(blob) });
+    }
+    return clips;
+  }
+
+  /** Restore clips from an exported backup. Overwrites any existing clip at the same key. */
+  async function importAll(clips) {
+    let count = 0;
+    for (const c of clips || []) {
+      if (!c || !c.key || !c.data) continue;
+      await put(c.key, base64ToBlob(c.data, c.mimeType));
+      count++;
+    }
+    return count;
+  }
+
+  return { key, put, get, del, has, delItem, allKeys, stats, exportAll, importAll };
 })();

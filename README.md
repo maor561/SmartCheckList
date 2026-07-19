@@ -128,6 +128,13 @@ so a quiet device can be turned up without re-recording anything. It's a device 
 a profile setting — it doesn't travel with the export and won't affect a device that already
 sounds right.
 
+Since recordings only ever live in this device's IndexedDB, **Export recordings** /
+**Import recordings** in Settings back them up to a JSON file you keep somewhere of your own
+— clearing the browser's site data (which a cache clear can drag along with it) or moving to
+a new device otherwise means recording everything again. Import matches clips back up by item
+id, so it restores correctly onto a profile with the same items — the shipped profiles always
+qualify; a *duplicated* profile does not, since duplicating reissues every id.
+
 ## Editing checklists
 
 **Edit** opens the editor: rename phases, reorder them, add/remove phases, add/remove/edit
